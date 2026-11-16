@@ -6,8 +6,7 @@ requires-python = ">=3.11"
 [tool.ruff]
 line-length = 79
 target-version = "py311"
-# answer.py is the starter stub, replaced in the runner task.
-extend-exclude = [".claude", ".venv", "index", "corpus", "answer.py"]
+extend-exclude = [".claude", ".venv", "index", "corpus"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N", "SIM", "PL"]
