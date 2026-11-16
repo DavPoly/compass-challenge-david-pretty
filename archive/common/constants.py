@@ -67,36 +67,6 @@ IDENTIFIER_DASH_CHARS = "-\u2010\u2011\u2012\u2013\u2014\u2015\u2212"
 IDENTIFIER_SERIAL_DIGITS = {"F": 4, "C": 2, "BRV": 2}
 EMAIL_PATTERN = r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+"
 
-# Dates.
-DATE_ISO_PATTERN = r"(?<![\d-])(?P<y>\d{4})-(?P<m>\d{2})-(?P<d>\d{2})(?!\d)"
-DATE_NUMERIC_PATTERN = (
-    r"(?<![\d/.])(?P<d>\d{1,2})[/.](?P<m>\d{1,2})[/.]"
-    r"(?P<y>\d{4})(?![\d/.])"
-)
-DATE_SHORT_YEAR_PATTERN = (
-    r"(?<![\d/.])(?P<d>\d{2})/(?P<m>\d{2})/(?P<y>\d{2})(?![\d/.])"
-)
-DATE_DAY_MONTH_WORD_PATTERN = (
-    r"(?<!\d)(?P<d>\d{1,2})(?:er|st|nd|rd|th)?\s+"
-    r"(?P<m>[^\W\d_]{3,12})\.?,?\s+(?P<y>\d{4})(?!\d)"
-)
-DATE_MONTH_WORD_DAY_PATTERN = (
-    r"(?<![^\W\d_])(?P<m>[^\W\d_]{3,12})\.?\s+(?P<d>\d{1,2})"
-    r"(?:st|nd|rd|th)?,?\s+(?P<y>\d{4})(?!\d)"
-)
-SHORT_YEAR_CENTURY = 2000
-SHORT_YEAR_DIGITS = 2
-MONTH_FUZZY_MIN_LENGTH = 4
-MONTH_FUZZY_CUTOFF = 0.8
-MONTH_NUMBERS = {
-    "janvier": 1, "fevrier": 2, "mars": 3, "avril": 4, "mai": 5,
-    "juin": 6, "juillet": 7, "aout": 8, "septembre": 9,
-    "octobre": 10, "novembre": 11, "decembre": 12,
-    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5,
-    "june": 6, "july": 7, "august": 8, "september": 9,
-    "october": 10, "november": 11, "december": 12,
-}  # fmt: skip
-
 # --- Index building ------------------------------------------------------
 
 PDF_GLOB = "*.pdf"

@@ -2,15 +2,8 @@
 
 import re
 from dataclasses import dataclass
-from datetime import date
-from difflib import get_close_matches
 
 from archive.common.constants import (
-    DATE_DAY_MONTH_WORD_PATTERN,
-    DATE_ISO_PATTERN,
-    DATE_MONTH_WORD_DAY_PATTERN,
-    DATE_NUMERIC_PATTERN,
-    DATE_SHORT_YEAR_PATTERN,
     DOC_TYPE_UNKNOWN,
     EMAIL_PATTERN,
     IDENTIFIER_DASH_CHARS,
@@ -21,11 +14,20 @@ from archive.common.constants import (
     LANG_HINTS_EN,
     LANG_HINTS_FR,
     LANG_WORD_PATTERN,
-    MONTH_FUZZY_CUTOFF,
-    MONTH_FUZZY_MIN_LENGTH,
-    MONTH_NUMBERS,
+)
+from archive.common.text.date_parsing_constants import (
+    DATE_DAY_MONTH_WORD_PATTERN,
+    DATE_ISO_PATTERN,
+    DATE_MONTH_WORD_DAY_PATTERN,
+    DATE_NUMERIC_PATTERN,
+    DATE_SHORT_YEAR_PATTERN,
+    MONTH_FULL_NAMES,
     SHORT_YEAR_CENTURY,
     SHORT_YEAR_DIGITS,
+)
+from archive.common.text.date_parsing_utils import (
+    build_iso_date,
+    fuzzy_month_number,
 )
 from archive.common.text.text_normalize_utils import (
     join_pages,
@@ -135,25 +137,14 @@ def _to_iso(match: re.Match[str]) -> str | None:
     year = int(groups["y"])
     if len(groups["y"]) == SHORT_YEAR_DIGITS:
         year += SHORT_YEAR_CENTURY
-    try:
-        return date(year, month, int(groups["d"])).isoformat()
-    except ValueError:
-        return None
+    return build_iso_date(year, month, int(groups["d"]))
 
 
 def _month_number(token: str) -> int | None:
     """Month number of a numeric or FR/EN month token (typo tolerant)."""
     if token.isdigit():
         return int(token)
-    name = normalize_for_match(token)
-    if name in MONTH_NUMBERS:
-        return MONTH_NUMBERS[name]
-    if len(name) < MONTH_FUZZY_MIN_LENGTH:
-        return None
-    close = get_close_matches(
-        name, MONTH_NUMBERS, n=1, cutoff=MONTH_FUZZY_CUTOFF
-    )
-    return MONTH_NUMBERS[close[0]] if close else None
+    return fuzzy_month_number(token, MONTH_FULL_NAMES)
 
 
 def _detect_lang(text: str) -> str:
