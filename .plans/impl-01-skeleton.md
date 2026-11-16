@@ -2,7 +2,7 @@
 
 **Status:** approved
 **Parent:** [impl-00-roadmap.md](impl-00-roadmap.md), [global-architecture.md](global-architecture.md)
-**Orchestrator branch `B`:** `feat/skeleton` (cut from `docs/architecture`)
+**Orchestrator branch `B`:** `feat/skeleton` (cut from `main`)
 **BASE:** _(record `git rev-parse B` here before T0; never overwrite)_
 **Subagent branches:** _(record each `<type>/<slug>` here when created)_
 
@@ -114,7 +114,7 @@ any (code-quality §4). Shared constants go in `archive/common/constants.py`.
 
 | Task | What | Owns | Parallel | Depends on | Done when |
 |---|---|---|---|---|---|
-| T0 tracer | Tooling (ruff, mypy strict, pytest in `pyproject.toml`), pinned `requirements*.txt`, `.gitignore` (`.lock`, `traces/`, `corpus/`), `archive/common/*`, minimal `pdf_parse_gateway`, `qdrant_gateway` (sparse only). Spike: index 30 docs, query one known code. Commits the starter files first (`chore: import starter kit`). | `pyproject.toml`, `requirements*.txt`, `.gitignore`, `archive/common/*`, `archive/ingest/pdf_parse_gateway.py`, `archive/retrieval/qdrant_gateway.py`, their tests | no | none | a test queries a code and gets the right doc; all checks pass |
+| T0 tracer | Tooling (ruff, mypy strict, pytest in `pyproject.toml`), pinned `requirements*.txt`, `.gitignore` (`.lock`, `traces/`, `corpus/`), `archive/common/*`, minimal `pdf_parse_gateway`, `qdrant_gateway` (sparse only). Spike: index 30 docs, query one known code. | `pyproject.toml`, `requirements*.txt`, `.gitignore`, `archive/common/*`, `archive/ingest/pdf_parse_gateway.py`, `archive/retrieval/qdrant_gateway.py`, their tests | no | none | a test queries a code and gets the right doc; all checks pass |
 | T1 ingest | normalize, chunking, metadata | `archive/ingest/{text_normalize_utils,chunking_service,metadata_service}.py` + tests | yes (A) | T0 | unit tests cover edge cases: empty doc, typo'd codes, FR/EN text, chunk boundaries |
 | T2 llm | `LlmGateway` | `archive/llm/*` + tests | yes (A) | T0 | mocked tests cover 429 + `Retry-After`, timeout, 5xx, bad JSON then repair, repair failure |
 | T3 validation | input + answer models, validator | `archive/validation/*` + tests | yes (A) | T0 | tests cover bad question line, unknown or unretrieved citation, format rules, no forced abstention |
