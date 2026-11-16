@@ -20,17 +20,16 @@ from archive.pipeline.pipeline_constants import (
     EXIT_OK,
     GLOBAL_DEADLINE_S,
     LOG_DEADLINE_REACHED,
+    LOG_DOC_IDS_DIFFER,
     LOG_DROPPED_CITATIONS,
-    LOG_DUPLICATE_ID,
     LOG_LATE_RESULT,
     LOG_LLM_UNAVAILABLE,
     LOG_OVER_BUDGET,
     LOG_QUESTION_INVALID,
     LOG_QUESTION_ISSUE,
     LOG_UNEXPECTED_ERROR,
-    MSG_CANNOT_WRITE,
-    MSG_DOC_IDS_DIFFER,
     MSG_INDEX_OPEN,
+    MSG_IO_ERROR,
     MSG_NO_CORPUS,
     POLL_INTERVAL_S,
     QUESTION_BUDGET_S,
@@ -197,11 +196,11 @@ def _process_all(
 
 
 def _unique(questions: list[Question]) -> list[Question]:
+    """Keep the first question of each id; the loader warned duplicates."""
     seen: set[str] = set()
     unique = []
     for question in questions:
         if question.id in seen:
-            logger.warning(LOG_DUPLICATE_ID, question.id)
             continue
         seen.add(question.id)
         unique.append(question)
@@ -218,7 +217,7 @@ def _valid_doc_ids(search: SearchService, corpus_dir: Path) -> frozenset[str]:
     valid = frozenset(manifest_ids & corpus_ids)
     if manifest_ids != corpus_ids:
         logger.warning(
-            MSG_DOC_IDS_DIFFER,
+            LOG_DOC_IDS_DIFFER,
             len(manifest_ids),
             len(corpus_ids),
             len(valid),
@@ -275,8 +274,6 @@ def run(
             ) as out:
                 _process_all(questions, AnswerWriter(out), context)
         except OSError as error:
-            logger.error(
-                MSG_CANNOT_WRITE.format(path=answers_path, reason=error)
-            )
+            logger.error(MSG_IO_ERROR.format(path=answers_path, reason=error))
             return EXIT_ERROR
     return EXIT_OK

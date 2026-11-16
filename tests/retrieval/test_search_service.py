@@ -10,6 +10,11 @@ import pytest
 from archive.common.chunk_model import Chunk, ChunkKind
 from archive.ingest.index_builder_service import ManifestError
 from archive.retrieval import search_service
+from archive.retrieval.qdrant_constants import (
+    FIELD_DOC_DATE,
+    FIELD_DOC_TYPE,
+    FIELD_IDENTIFIERS,
+)
 from archive.retrieval.qdrant_gateway import IndexOpenError, QdrantGateway
 from archive.retrieval.search_constants import LOG_CLOSE_TIMEOUT
 from archive.retrieval.search_service import (
@@ -83,9 +88,9 @@ def test_filters_convert_to_one_condition_each() -> None:
     assert converted is not None
     assert converted.must is not None
     assert [c.key for c in converted.must] == [  # type: ignore[union-attr]
-        "identifiers",
-        "doc_type",
-        "doc_date",
+        FIELD_IDENTIFIERS,
+        FIELD_DOC_TYPE,
+        FIELD_DOC_DATE,
     ]
 
 

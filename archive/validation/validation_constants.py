@@ -42,10 +42,9 @@ DECIMAL_PLACES = 2
 AMOUNT_ROUNDING = ROUND_HALF_UP
 MAX_DECIMAL_DIGITS = 2
 THOUSANDS_GROUP_DIGITS = 3
-MAX_UNAMBIGUOUS_MONTH = 12
 PDF_SUFFIX = ".pdf"
 
-INVISIBLE_SPACE_RE = re.compile(r"[   ']")
+INVISIBLE_SPACE_RE = re.compile(r"[\u00a0\u202f ']")
 SEPARATOR_RE = re.compile(r"[,.]")
 
 ISSUE_NORMALIZED = "normalized answer {original!r} to {fixed!r}"

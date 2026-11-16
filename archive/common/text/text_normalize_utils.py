@@ -29,10 +29,10 @@ def normalize_text(text: str) -> str:
     Returns:
         The normalized text.
     """
-    folded = unicodedata.normalize(UNICODE_COMPAT_FORM, text)
-    folded = folded.replace("\r\n", "\n").replace("\r", "\n")
-    folded = _HORIZONTAL_SPACE.sub(" ", folded)
-    lines = [line.strip() for line in folded.split("\n")]
+    normalized = unicodedata.normalize(UNICODE_COMPAT_FORM, text)
+    normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = _HORIZONTAL_SPACE.sub(" ", normalized)
+    lines = [line.strip() for line in normalized.split("\n")]
     return _BLANK_LINES.sub(PAGE_SEPARATOR, "\n".join(lines)).strip()
 
 
