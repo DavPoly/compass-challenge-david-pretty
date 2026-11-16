@@ -1,0 +1,33 @@
+[project]
+name = "ask-the-archive"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 79
+target-version = "py311"
+# answer.py is the starter stub, replaced in the runner task.
+extend-exclude = [".claude", ".venv", "index", "corpus", "answer.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "SIM", "PL"]
+ignore = ["PLR2004"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["PLR0913"]
+# Word blocks are clearer as split strings than as list literals.
+"archive/common/constants.py" = ["SIM905"]
+
+[tool.mypy]
+strict = true
+plugins = ["pydantic.mypy"]
+python_version = "3.11"
+
+[[tool.mypy.overrides]]
+# pdfplumber ships no type stubs.
+module = ["pdfplumber", "pdfplumber.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

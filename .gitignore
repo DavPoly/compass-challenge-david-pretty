@@ -18,3 +18,12 @@ corpus/
 CHALLENGE.md
 score.py
 samples/
+
+# Verrou du Qdrant embarqué, traces et caches d'outils
+index/qdrant/.lock
+*.lock
+traces/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.claude/temp_worktree/
