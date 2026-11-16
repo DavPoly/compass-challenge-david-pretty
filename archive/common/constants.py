@@ -103,3 +103,12 @@ MONTH_NUMBERS = {
     "june": 6, "july": 7, "august": 8, "september": 9,
     "october": 10, "november": 11, "december": 12,
 }  # fmt: skip
+
+# --- Index building ------------------------------------------------------
+
+PDF_GLOB = "*.pdf"
+MANIFEST_FILE_NAME = "manifest.json"
+MANIFEST_INDENT = 1
+BUILD_FLUSH_CHUNKS = 512
+BUILD_MAP_CHUNKSIZE = 8
+FILE_HASH_BLOCK_BYTES = 1 << 20
