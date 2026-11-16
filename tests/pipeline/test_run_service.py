@@ -169,6 +169,28 @@ def test_end_to_end_writes_one_valid_line_per_question(
     assert rows["line-3"]["citations"] == []
 
 
+def test_duplicate_id_answers_only_the_first_question(
+    indexed: tuple[AppConfig, str], fake_llm: FakeLlm, tmp_path: Path
+) -> None:
+    config, query = indexed
+    questions = write_questions(
+        tmp_path / "q.jsonl",
+        [
+            {"id": "dup", "question": query},
+            {"id": "dup", "question": STOP_ONLY_QUESTION},
+        ],
+    )
+    answers = tmp_path / "a.jsonl"
+
+    code = run_service.run(questions, answers, config)
+
+    lines = answers.read_text(encoding="utf-8").splitlines()
+    assert code == EXIT_OK
+    assert len(lines) == 1
+    assert read_answers(answers)["dup"]["status"] == "answered"
+    assert fake_llm.call_count == 1
+
+
 def test_zero_hits_makes_no_llm_call(
     indexed: tuple[AppConfig, str], fake_llm: FakeLlm, tmp_path: Path
 ) -> None:
