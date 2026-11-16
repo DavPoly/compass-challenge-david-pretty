@@ -1,6 +1,7 @@
 """Constants shared by the validation package."""
 
 import re
+from decimal import ROUND_HALF_UP
 
 LINE_ID_PREFIX = "line-"
 MAX_ANSWER_CHARS = 200
@@ -64,5 +65,20 @@ AMOUNT_RE = re.compile(
     re.IGNORECASE,
 )
 DECIMAL_PLACES = 2
+AMOUNT_ROUNDING = ROUND_HALF_UP
 MAX_DECIMAL_DIGITS = 2
 THOUSANDS_GROUP_DIGITS = 3
+MAX_UNAMBIGUOUS_MONTH = 12
+PDF_SUFFIX = ".pdf"
+
+INVISIBLE_SPACE_RE = re.compile(r"[   ']")
+SEPARATOR_RE = re.compile(r"[,.]")
+
+ISSUE_NORMALIZED = "normalized answer {original!r} to {fixed!r}"
+ISSUE_TOO_LONG = "answer has {length} chars, expected under {limit}"
+ISSUE_DROPPED = "dropped citations not retrieved: {dropped}"
+ISSUE_NO_CITATION = "status {status} has no valid citation"
+ISSUE_CONFLICT_CITATIONS = (
+    "conflict cites {count} document(s), expected at least {minimum}"
+)
+ISSUE_NOT_FOUND_CLEARED = "not_found cleared answer and citations"

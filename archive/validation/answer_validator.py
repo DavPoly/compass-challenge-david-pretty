@@ -4,11 +4,10 @@ Validation never abstains: a draft that fails a check keeps its status
 and an issue is recorded instead.
 """
 
-import re
 import unicodedata
 from collections.abc import Collection
 from datetime import date
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
 
 from pydantic import BaseModel
 
@@ -17,18 +16,30 @@ from archive.validation.answer_model import (
     DraftAnswer,
     FinalAnswer,
 )
+from archive.validation.issue_model import IssueCode, ValidationIssue
 from archive.validation.validation_constants import (
     AMOUNT_RE,
+    AMOUNT_ROUNDING,
     DAY_FIRST_DATE_RE,
     DAY_MONTH_NAME_RE,
     DECIMAL_PLACES,
+    INVISIBLE_SPACE_RE,
     ISO_DATE_RE,
+    ISSUE_CONFLICT_CITATIONS,
+    ISSUE_DROPPED,
+    ISSUE_NO_CITATION,
+    ISSUE_NORMALIZED,
+    ISSUE_NOT_FOUND_CLEARED,
+    ISSUE_TOO_LONG,
     MAX_ANSWER_CHARS,
     MAX_DECIMAL_DIGITS,
+    MAX_UNAMBIGUOUS_MONTH,
     MIN_CONFLICT_CITATIONS,
     MONTH_NAME_DAY_RE,
     MONTHS,
     NOT_FOUND_ANSWER,
+    PDF_SUFFIX,
+    SEPARATOR_RE,
     THOUSANDS_GROUP_DIGITS,
 )
 
@@ -37,7 +48,7 @@ class ValidationResult(BaseModel):
     """Final answer plus what validation changed or flagged."""
 
     answer: FinalAnswer
-    issues: list[str]
+    issues: list[ValidationIssue]
     dropped_citations: list[str]
 
 
@@ -56,14 +67,18 @@ def _make_date(year: int, month: int, day: int) -> str | None:
 def normalize_date(text: str) -> str | None:
     """Return ISO form when the whole text is one date, else None.
 
-    Accepts YYYY-MM-DD, DD/MM/YYYY (day first), ``4 mars 2025`` and
-    ``March 4, 2025``.
+    Accepts YYYY-MM-DD, ``4 mars 2025`` and ``March 4, 2025``. A
+    DD/MM/YYYY date is converted only when the day is above 12, as it
+    is otherwise ambiguous with MM/DD/YYYY; the scorer tries both
+    orders, so an ambiguous date is left as written.
     """
     plain = _strip_accents(text.strip().rstrip(".")).lower()
     if match := ISO_DATE_RE.fullmatch(plain):
         year, month, day = match.groups()
     elif match := DAY_FIRST_DATE_RE.fullmatch(plain):
         day, month, year = match.groups()
+        if int(day) <= MAX_UNAMBIGUOUS_MONTH:
+            return None
     elif match := DAY_MONTH_NAME_RE.fullmatch(plain):
         day, name, year = match.groups()
         month = str(MONTHS[name])
@@ -80,9 +95,9 @@ def _is_decimal_mark(digits: str, separators: list[int]) -> bool:
     last = separators[-1]
     tail = digits[last + 1 :]
     if len(separators) == 1:
-        return len(tail) <= MAX_DECIMAL_DIGITS or (
-            digits[last] == "." and len(tail) != THOUSANDS_GROUP_DIGITS
-        )
+        if len(tail) == THOUSANDS_GROUP_DIGITS:
+            return digits[:last] in ("", "0")
+        return len(tail) <= MAX_DECIMAL_DIGITS or digits[last] == "."
     return (
         digits[last] != digits[separators[0]]
         and len(tail) <= MAX_DECIMAL_DIGITS
@@ -90,17 +105,17 @@ def _is_decimal_mark(digits: str, separators: list[int]) -> bool:
 
 
 def _to_decimal(raw: str) -> Decimal | None:
-    digits = re.sub(r"[   ']", "", raw)
+    digits = INVISIBLE_SPACE_RE.sub("", raw)
     negative = digits.startswith("-")
     digits = digits.lstrip("-")
     separators = [i for i, char in enumerate(digits) if char in ",."]
     if separators:
         last = separators[-1]
         if _is_decimal_mark(digits, separators):
-            head = re.sub(r"[,.]", "", digits[:last])
+            head = SEPARATOR_RE.sub("", digits[:last])
             digits = f"{head}.{digits[last + 1 :]}"
         else:
-            digits = re.sub(r"[,.]", "", digits)
+            digits = SEPARATOR_RE.sub("", digits)
     try:
         value = Decimal(digits)
     except InvalidOperation:
@@ -108,11 +123,29 @@ def _to_decimal(raw: str) -> Decimal | None:
     return -value if negative else value
 
 
+def _format_amount(value: Decimal) -> str:
+    """Render an amount with half-up rounding to the decimal places kept."""
+    with localcontext() as context:
+        context.rounding = AMOUNT_ROUNDING
+        return f"{value:.{DECIMAL_PLACES}f}"
+
+
 def normalize_amount(text: str) -> str | None:
     """Return a plain decimal like ``12500.00`` for a currency amount.
 
     Only a text made of one number with a currency marker ($, CAD,
     dollars) is converted; anything else returns None.
+
+    Separator heuristic (mirrors the scorer): spaces, apostrophes and
+    non-breaking spaces are grouping marks and dropped. With several
+    separators, the last one is the decimal mark only when it differs
+    from the first and has at most two digits after it. A single ``.``
+    or ``,`` followed by exactly three digits is a thousands separator
+    (``1,234`` is 1234) unless the head is empty or ``0`` (``0.125``
+    stays 0.125). Otherwise a single separator followed by up to two
+    digits is decimal, and so is a single ``.`` followed by more than
+    three digits. The amount is finally rounded half up to two places
+    (``0.125`` becomes 0.13).
     """
     match = AMOUNT_RE.fullmatch(text.strip())
     if not match or not (match["before"] or match["after"]):
@@ -120,57 +153,92 @@ def normalize_amount(text: str) -> str | None:
     value = _to_decimal(match["number"])
     if value is None:
         return None
-    return f"{value:.{DECIMAL_PLACES}f}"
+    return _format_amount(value)
 
 
-def _normalize_item(item: str, issues: list[str]) -> str:
+def _normalize_item(item: str) -> tuple[str, list[ValidationIssue]]:
     stripped = item.strip()
     fixed = normalize_date(stripped) or normalize_amount(stripped)
     result = fixed or stripped
-    if result != item:
-        issues.append(f"normalized answer {item!r} to {result!r}")
-    return result
+    if result == item:
+        return result, []
+    detail = ISSUE_NORMALIZED.format(original=item, fixed=result)
+    return result, [ValidationIssue(code=IssueCode.NORMALIZED, detail=detail)]
 
 
 def _normalize_answer(
-    answer: str | list[str], issues: list[str]
-) -> str | list[str]:
+    answer: str | list[str],
+) -> tuple[str | list[str], list[ValidationIssue]]:
     if isinstance(answer, list):
-        return [_normalize_item(item, issues) for item in answer]
-    fixed = _normalize_item(answer, issues)
-    if len(fixed) >= MAX_ANSWER_CHARS:
-        issues.append(
-            f"answer has {len(fixed)} chars, expected under {MAX_ANSWER_CHARS}"
+        pairs = [_normalize_item(item) for item in answer]
+        return (
+            [value for value, _ in pairs],
+            [issue for _, found in pairs for issue in found],
         )
-    return fixed
+    fixed, issues = _normalize_item(answer)
+    if len(fixed) >= MAX_ANSWER_CHARS:
+        detail = ISSUE_TOO_LONG.format(
+            length=len(fixed), limit=MAX_ANSWER_CHARS
+        )
+        issues.append(
+            ValidationIssue(code=IssueCode.ANSWER_TOO_LONG, detail=detail)
+        )
+    return fixed, issues
 
 
 def _filter_citations(
-    citations: list[str], allowed: set[str], dropped: list[str]
-) -> list[str]:
+    citations: list[str], allowed: set[str]
+) -> tuple[list[str], list[str]]:
+    """Split citations into kept doc ids and dropped raw citations."""
     kept: list[str] = []
+    dropped: list[str] = []
     for citation in citations:
-        doc_id = citation.strip().removesuffix(".pdf")
+        doc_id = citation.strip().removesuffix(PDF_SUFFIX)
         if doc_id not in allowed:
             if citation not in dropped:
                 dropped.append(citation)
         elif doc_id not in kept:
             kept.append(doc_id)
-    return kept
+    return kept, dropped
 
 
 def _check_status(
-    status: AnswerStatus, citations: list[str], issues: list[str]
-) -> None:
+    status: AnswerStatus, citations: list[str]
+) -> list[ValidationIssue]:
+    issues: list[ValidationIssue] = []
     if not citations:
-        issues.append(f"status {status} has no valid citation")
+        issues.append(
+            ValidationIssue(
+                code=IssueCode.NO_VALID_CITATION,
+                detail=ISSUE_NO_CITATION.format(status=status),
+            )
+        )
     if status is AnswerStatus.CONFLICT and (
         len(citations) < MIN_CONFLICT_CITATIONS
     ):
-        issues.append(
-            f"conflict cites {len(citations)} document(s), expected "
-            f"at least {MIN_CONFLICT_CITATIONS}"
+        detail = ISSUE_CONFLICT_CITATIONS.format(
+            count=len(citations), minimum=MIN_CONFLICT_CITATIONS
         )
+        issues.append(
+            ValidationIssue(code=IssueCode.CONFLICT_CITATIONS, detail=detail)
+        )
+    return issues
+
+
+def _abstain(question_id: str, draft: DraftAnswer) -> ValidationResult:
+    issues: list[ValidationIssue] = []
+    if draft.answer != NOT_FOUND_ANSWER or draft.citations:
+        issues.append(
+            ValidationIssue(
+                code=IssueCode.NOT_FOUND_CLEARED,
+                detail=ISSUE_NOT_FOUND_CLEARED,
+            )
+        )
+    return ValidationResult(
+        answer=FinalAnswer.not_found(question_id),
+        issues=issues,
+        dropped_citations=[],
+    )
 
 
 def validate(
@@ -187,25 +255,23 @@ def validate(
     decimals. A not_found draft becomes the empty abstention line. The
     status is never turned into an abstention by a failed check.
 
-    Returns the final answer, human-readable issues and the dropped
-    citations. No I/O.
+    Returns the final answer, typed issues and the dropped citations.
+    No I/O.
     """
-    issues: list[str] = []
-    dropped: list[str] = []
     if draft.status is AnswerStatus.NOT_FOUND:
-        if draft.answer != NOT_FOUND_ANSWER or draft.citations:
-            issues.append("not_found cleared answer and citations")
-        return ValidationResult(
-            answer=FinalAnswer.not_found(question_id),
-            issues=issues,
-            dropped_citations=dropped,
-        )
+        return _abstain(question_id, draft)
     allowed = set(retrieved_doc_ids) & set(known_doc_ids)
-    citations = _filter_citations(draft.citations, allowed, dropped)
+    citations, dropped = _filter_citations(draft.citations, allowed)
+    issues: list[ValidationIssue] = []
     if dropped:
-        issues.append(f"dropped citations not retrieved: {dropped}")
-    _check_status(draft.status, citations, issues)
-    answer = _normalize_answer(draft.answer, issues)
+        issues.append(
+            ValidationIssue(
+                code=IssueCode.CITATIONS_DROPPED,
+                detail=ISSUE_DROPPED.format(dropped=dropped),
+            )
+        )
+    issues.extend(_check_status(draft.status, citations))
+    answer, answer_issues = _normalize_answer(draft.answer)
     final = FinalAnswer(
         id=question_id,
         answer=answer,
@@ -213,5 +279,7 @@ def validate(
         status=draft.status,
     )
     return ValidationResult(
-        answer=final, issues=issues, dropped_citations=dropped
+        answer=final,
+        issues=issues + answer_issues,
+        dropped_citations=dropped,
     )
