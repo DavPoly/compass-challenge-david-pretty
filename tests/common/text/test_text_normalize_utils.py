@@ -4,6 +4,7 @@ from archive.common.text.text_normalize_utils import (
     join_pages,
     normalize_for_match,
     normalize_text,
+    strip_accents,
 )
 
 
@@ -50,6 +51,32 @@ def test_normalize_for_match_handles_decomposed_input() -> None:
 
 def test_normalize_for_match_normalizes_spaces() -> None:
     assert normalize_for_match("Facturé\u00a0à") == "facture a"
+
+
+def test_strip_accents_folds_precomposed_and_decomposed_marks() -> None:
+    assert strip_accents("\u00e9") == "e"
+    assert strip_accents("e\u0301") == "e"
+    assert strip_accents("\u00e7a") == "ca"
+
+
+def test_strip_accents_keeps_case_and_other_characters() -> None:
+    assert strip_accents("\u00c9l\u00e8ve 12") == "Eleve 12"
+
+
+def test_strip_accents_empty() -> None:
+    assert strip_accents("") == ""
+
+
+def test_normalize_for_match_is_strip_accents_of_lowercased_text() -> None:
+    raw = "Factur\u00e9\u00a0\u00e0 LAFRENI\u00c8RE"
+
+    assert normalize_for_match(raw) == strip_accents(
+        normalize_text(raw).lower()
+    )
+
+
+def test_normalize_for_match_folds_mixed_accent_forms() -> None:
+    assert normalize_for_match("\u00c9t\u00e9 e\u0301te\u0301") == "ete ete"
 
 
 def test_join_pages_separates_pages_with_blank_line() -> None:

@@ -4,13 +4,13 @@ Validation never abstains: a draft that fails a check keeps its status
 and an issue is recorded instead.
 """
 
-import unicodedata
 from collections.abc import Collection
 from datetime import date
 from decimal import Decimal, InvalidOperation, localcontext
 
 from pydantic import BaseModel
 
+from archive.common.text.text_normalize_utils import strip_accents
 from archive.validation.answer_model import (
     AnswerStatus,
     DraftAnswer,
@@ -52,11 +52,6 @@ class ValidationResult(BaseModel):
     dropped_citations: list[str]
 
 
-def _strip_accents(text: str) -> str:
-    decomposed = unicodedata.normalize("NFKD", text)
-    return "".join(c for c in decomposed if not unicodedata.combining(c))
-
-
 def _make_date(year: int, month: int, day: int) -> str | None:
     try:
         return date(year, month, day).isoformat()
@@ -72,7 +67,7 @@ def normalize_date(text: str) -> str | None:
     is otherwise ambiguous with MM/DD/YYYY; the scorer tries both
     orders, so an ambiguous date is left as written.
     """
-    plain = _strip_accents(text.strip().rstrip(".")).lower()
+    plain = strip_accents(text.strip().rstrip(".")).lower()
     if match := ISO_DATE_RE.fullmatch(plain):
         year, month, day = match.groups()
     elif match := DAY_FIRST_DATE_RE.fullmatch(plain):
