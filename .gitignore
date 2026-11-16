@@ -1,0 +1,20 @@
+# Ne jamais versionner de clé
+.env
+*.key
+
+# Environnements et caches
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Sorties locales
+answers.jsonl
+
+# Le corpus officiel est placé dans ./corpus/ par l'organisation : inutile de le versionner
+corpus/
+
+# Copies locales du kit (la référence reste ../compass-challenge-kit)
+CHALLENGE.md
+score.py
+samples/

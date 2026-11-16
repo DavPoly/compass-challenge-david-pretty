@@ -1,0 +1,2 @@
+# Une dépendance par ligne, avec une version épinglée. Exemple :
+# requests==2.32.3
