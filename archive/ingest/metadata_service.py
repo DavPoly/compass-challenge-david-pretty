@@ -86,13 +86,13 @@ def extract_metadata(doc: ParsedDoc) -> DocMetadata:
     return DocMetadata(
         doc_type=DOC_TYPE_UNKNOWN,
         doc_date=_find_first_date(text),
-        identifiers=_find_identifiers(text),
+        identifiers=extract_identifiers(text),
         lang=_detect_lang(text),
     )
 
 
-def _find_identifiers(text: str) -> list[str]:
-    """Return sorted unique canonical codes and emails of `text`."""
+def extract_identifiers(text: str) -> list[str]:
+    """Return the sorted unique canonical codes and emails of `text`."""
     found = {
         code
         for code in map(_canonical_code, _IDENTIFIER.finditer(text))

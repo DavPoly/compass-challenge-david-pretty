@@ -14,8 +14,7 @@ from qdrant_client import models
 
 from archive.common.chunk_model import Chunk
 from archive.ingest.index_builder_service import load_manifest
-from archive.ingest.metadata_service import extract_metadata
-from archive.ingest.pdf_parse_gateway import ParsedDoc
+from archive.ingest.metadata_service import extract_identifiers
 from archive.retrieval.qdrant_constants import (
     FIELD_DOC_DATE,
     FIELD_DOC_TYPE,
@@ -24,7 +23,6 @@ from archive.retrieval.qdrant_constants import (
 from archive.retrieval.qdrant_gateway import QdrantGateway
 from archive.retrieval.search_constants import (
     LOG_CLOSE_TIMEOUT,
-    QUERY_DOC_ID,
     QUERY_DRAIN_TIMEOUT_S,
     UNRANKED_SCORE,
 )
@@ -92,8 +90,7 @@ def _match_any(key: str, values: list[str]) -> models.FieldCondition:
 
 def find_identifiers(text: str) -> list[str]:
     """Canonical identifiers (codes, emails) mentioned in `text`."""
-    doc = ParsedDoc(doc_id=QUERY_DOC_ID, pages=[text])
-    return extract_metadata(doc).identifiers
+    return extract_identifiers(text)
 
 
 class SearchService:

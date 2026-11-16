@@ -2,7 +2,11 @@
 
 import pytest
 
-from archive.ingest.metadata_service import DocMetadata, extract_metadata
+from archive.ingest.metadata_service import (
+    DocMetadata,
+    extract_identifiers,
+    extract_metadata,
+)
 from archive.ingest.pdf_parse_gateway import ParsedDoc
 
 
@@ -17,6 +21,13 @@ def test_empty_doc_has_no_metadata() -> None:
     assert metadata.doc_date is None
     assert metadata.lang == "fr"
     assert metadata.doc_type == "unknown"
+
+
+def test_identifiers_of_a_bare_text_are_extracted_without_a_document() -> None:
+    assert extract_identifiers("Ref : f-2023-0042, cc A@B.co") == [
+        "F-2023-0042",
+        "a@b.co",
+    ]
 
 
 def test_canonical_codes_are_extracted_sorted_unique() -> None:

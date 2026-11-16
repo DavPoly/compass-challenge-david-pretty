@@ -1,7 +1,6 @@
 """Constants of the search service."""
 
 UNRANKED_SCORE = 0.0
-QUERY_DOC_ID = "query"
 # How long teardown waits for an in-flight query before closing the
 # index anyway: a stuck worker must never hang the run.
 QUERY_DRAIN_TIMEOUT_S = 3.0
