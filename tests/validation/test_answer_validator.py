@@ -6,6 +6,7 @@ from archive.validation.answer_validator import (
     normalize_date,
     validate,
 )
+from archive.validation.issue_model import IssueCode
 
 KNOWN = {"doc_0001", "doc_0002", "doc_0003"}
 
@@ -27,7 +28,9 @@ def _draft(
     ("raw", "expected"),
     [
         ("2025-03-04", "2025-03-04"),
-        ("04/03/2025", "2025-03-04"),
+        ("14/03/2025", "2025-03-14"),
+        ("04/03/2025", None),
+        ("03/04/2025", None),
         ("4 mars 2025", "2025-03-04"),
         ("1er février 2024", "2024-02-01"),
         ("March 4, 2025", "2025-03-04"),
@@ -48,6 +51,11 @@ def test_normalize_date(raw: str, expected: str | None) -> None:
         ("$12,500.00", "12500.00"),
         ("1 234,5 $", "1234.50"),
         ("1,234 $", "1234.00"),
+        ("1.234 $", "1234.00"),
+        ("0.125 $", "0.13"),
+        ("0,125 $", "0.13"),
+        ("1,23 $", "1.23"),
+        ("1.2345 $", "1.23"),
         ("49 $", "49.00"),
         ("1.234.567,89 CAD", "1234567.89"),
         ("1,234,567.89 $", "1234567.89"),
@@ -89,7 +97,7 @@ def test_answered_with_all_citations_dropped_stays_answered() -> None:
     assert result.answer.status is AnswerStatus.ANSWERED
     assert result.answer.answer == "42"
     assert result.answer.citations == []
-    assert any("no valid citation" in issue for issue in result.issues)
+    assert any("no valid citation" in str(issue) for issue in result.issues)
 
 
 def test_conflict_with_one_citation_records_issue_only() -> None:
@@ -102,7 +110,7 @@ def test_conflict_with_one_citation_records_issue_only() -> None:
     result = validate("q1", draft, KNOWN, KNOWN)
 
     assert result.answer.status is AnswerStatus.CONFLICT
-    assert any("conflict cites 1" in issue for issue in result.issues)
+    assert any("conflict cites 1" in str(issue) for issue in result.issues)
 
 
 def test_conflict_with_two_citations_has_no_issue() -> None:
@@ -125,6 +133,9 @@ def test_not_found_is_emptied() -> None:
     assert result.answer.answer == ""
     assert result.answer.citations == []
     assert result.answer.status is AnswerStatus.NOT_FOUND
+    assert [issue.code for issue in result.issues] == [
+        IssueCode.NOT_FOUND_CLEARED
+    ]
 
 
 def test_answer_is_normalized_and_trimmed() -> None:
@@ -146,7 +157,7 @@ def test_long_answer_is_kept_and_flagged() -> None:
     result = validate("q1", _draft(answer=long_text), KNOWN, KNOWN)
 
     assert result.answer.answer == long_text
-    assert any("250 chars" in issue for issue in result.issues)
+    assert any("250 chars" in str(issue) for issue in result.issues)
 
 
 def test_list_answer_stays_list_with_items_normalized() -> None:
@@ -162,3 +173,40 @@ def test_empty_list_answer_is_kept() -> None:
 
     assert result.answer.answer == []
     assert result.answer.status is AnswerStatus.ANSWERED
+
+
+def test_issue_has_code_and_readable_text() -> None:
+    result = validate("q1", _draft(answer="$12,500.00"), KNOWN, KNOWN)
+
+    issue = result.issues[0]
+
+    assert issue.code is IssueCode.NORMALIZED
+    assert str(issue).startswith("normalized: normalized answer")
+
+
+def test_issues_are_typed_with_stable_codes() -> None:
+    result = validate("q1", _draft(citations=["doc_9999"]), KNOWN, KNOWN)
+
+    assert [issue.code for issue in result.issues] == [
+        IssueCode.CITATIONS_DROPPED,
+        IssueCode.NO_VALID_CITATION,
+    ]
+    assert str(result.issues[0]) == (
+        "citations_dropped: dropped citations not retrieved: ['doc_9999']"
+    )
+
+
+def test_number_coercion_flows_through_validation() -> None:
+    draft = DraftAnswer.model_validate(
+        {
+            "answer": 3,
+            "status": "answered",
+            "citations": "doc_0001",
+            "evidence_sufficient": True,
+        }
+    )
+
+    result = validate("q1", draft, KNOWN, KNOWN)
+
+    assert result.answer.answer == "3"
+    assert result.answer.citations == ["doc_0001"]

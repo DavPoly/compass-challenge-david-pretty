@@ -3,7 +3,7 @@
 from enum import StrEnum
 from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from archive.validation.validation_constants import (
     ANSWER_FIELD_DESCRIPTION,
@@ -27,6 +27,8 @@ class AnswerStatus(StrEnum):
 class Evidence(BaseModel):
     """A verbatim quote from one document and the value it supports."""
 
+    model_config = ConfigDict(coerce_numbers_to_str=True)
+
     doc_id: str
     quote: str
     value: str | None = None
@@ -34,6 +36,8 @@ class Evidence(BaseModel):
 
 class DraftAnswer(BaseModel):
     """Structured answer returned by the model, before validation."""
+
+    model_config = ConfigDict(coerce_numbers_to_str=True)
 
     answer: str | list[str] = Field(description=ANSWER_FIELD_DESCRIPTION)
     status: AnswerStatus = Field(description=STATUS_FIELD_DESCRIPTION)
@@ -45,6 +49,11 @@ class DraftAnswer(BaseModel):
     missing: str | None = Field(
         default=None, description=MISSING_FIELD_DESCRIPTION
     )
+
+    @field_validator("citations", mode="before")
+    @classmethod
+    def _wrap_single_citation(cls, value: object) -> object:
+        return [value] if isinstance(value, str) else value
 
 
 class FinalAnswer(BaseModel):
