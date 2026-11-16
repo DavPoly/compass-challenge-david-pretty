@@ -4,7 +4,7 @@
 **Parent:** [impl-00-roadmap.md](impl-00-roadmap.md), [global-architecture.md](global-architecture.md)
 **Orchestrator branch `B`:** `feat/skeleton` (cut from `main`)
 **BASE:** `bb65fa4c4855a1b2328605f3b6ceec1510f1b457`
-**Subagent branches:** `chore/tracer` (T0, merged), `feat/ingest-text` (T1, merged), `feat/llm-gateway` (T2, merged), `feat/validation` (T3, merged), `feat/retrieval-index` (T4, merged), `feat/agent-runner` (T5)
+**Subagent branches:** `chore/tracer` (T0, merged), `feat/ingest-text` (T1, merged), `feat/llm-gateway` (T2, merged), `feat/validation` (T3, merged), `feat/retrieval-index` (T4, merged), `feat/agent-runner` (T5, merged)
 
 ## Goal
 
@@ -183,3 +183,11 @@ so tests needing PDFs read from the kit's
   lock. Retrieval baseline on the 17 samples with gold citations: mean
   gold-doc recall@8 = 0.67, ≥1 gold doc in top 8 for 15/17; s01 and s12
   (policy/superseded, no code) miss entirely; s20 = 0.06 (aggregation).
+- 2026-11-16 (T5): merge was 940 lines (≈480 tests), over the soft 700
+  budget, merged anyway. LLM budget retuned: 12 s request timeout, 3
+  attempts, backoff cap 4 s, Retry-After cap 8 s → one request chain
+  ≤ 52 s; a repair chain can still overrun, and the runner's 60 s budget
+  then writes `not_found`. Lines are written in completion order;
+  duplicate question ids keep the first occurrence.
+- 2026-11-16: V is blocked on the user's `LLM_*` variables, so the
+  pre-commit review runs before V instead of after.
