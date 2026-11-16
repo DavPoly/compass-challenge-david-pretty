@@ -4,7 +4,7 @@
 **Parent:** [impl-00-roadmap.md](impl-00-roadmap.md), [global-architecture.md](global-architecture.md)
 **Orchestrator branch `B`:** `feat/skeleton` (cut from `main`)
 **BASE:** `bb65fa4c4855a1b2328605f3b6ceec1510f1b457`
-**Subagent branches:** `chore/tracer` (T0, merged), `feat/ingest-text` (T1), `feat/llm-gateway` (T2), `feat/validation` (T3)
+**Subagent branches:** `chore/tracer` (T0, merged), `feat/ingest-text` (T1, merged), `feat/llm-gateway` (T2, merged), `feat/validation` (T3, merged), `feat/retrieval-index` (T4)
 
 ## Goal
 
@@ -165,3 +165,15 @@ so tests needing PDFs read from the kit's
 - 2026-11-16: `archive/ingest/` will already hold 5 modules after T4, so
   T1's constants go in `archive/common/constants.py` (T1 is its only
   owner in batch A) rather than a sixth `ingest_constants.py`.
+- 2026-11-16 (T1): no identifier typos found in ~760 scanned PDFs; typos
+  sit in prose (month names matched with difflib, cutoff 0.8). The parser
+  stays tolerant anyway. The first 200 docs are all single-chunk.
+- 2026-11-16 (T2): `LlmResponseError` subclasses `LlmUnavailableError`.
+  Worst-case retries (5 × 45 s) exceed the 60 s question budget; T5 must
+  bound each call by the remaining question time.
+- 2026-11-16 (T3): merge was 798 lines (≈400 tests), over the soft 700
+  budget, merged anyway. `validate` takes `question_id` as a first
+  argument. score.py facts: false abstention costs 0.17 extra; any invalid
+  cited id zeroes that question's citation score; over-citing is
+  penalised by `(len(gold)+1)/len(cited)`; money tolerance 0.5%; gold
+  `not_found` answer is `""`.
