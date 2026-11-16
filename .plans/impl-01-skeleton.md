@@ -1,10 +1,10 @@
 # Step 01: walking skeleton
 
-**Status:** approved
+**Status:** in-progress
 **Parent:** [impl-00-roadmap.md](impl-00-roadmap.md), [global-architecture.md](global-architecture.md)
 **Orchestrator branch `B`:** `feat/skeleton` (cut from `main`)
-**BASE:** _(record `git rev-parse B` here before T0; never overwrite)_
-**Subagent branches:** _(record each `<type>/<slug>` here when created)_
+**BASE:** `bb65fa4c4855a1b2328605f3b6ceec1510f1b457`
+**Subagent branches:** `chore/tracer` (T0)
 
 ## Goal
 
