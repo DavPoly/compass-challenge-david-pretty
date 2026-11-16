@@ -1,6 +1,7 @@
 """Constantes partagées par plusieurs modules."""
 
 from pathlib import Path
+from typing import Final
 
 ENV_LLM_BASE_URL = "LLM_BASE_URL"
 ENV_LLM_API_KEY = "LLM_API_KEY"
@@ -37,8 +38,8 @@ STOPWORDS = STOPWORDS_FR | STOPWORDS_EN
 
 # --- Ingestion: text normalization, chunking, metadata -----------------
 
-UNICODE_COMPAT_FORM = "NFKC"
-UNICODE_DECOMPOSED_FORM = "NFKD"
+UNICODE_COMPAT_FORM: Final = "NFKC"
+UNICODE_DECOMPOSED_FORM: Final = "NFKD"
 HORIZONTAL_SPACE_PATTERN = r"[ \t\f\v]+"
 BLANK_LINES_PATTERN = r"\n{3,}"
 PAGE_SEPARATOR = "\n\n"
@@ -65,7 +66,7 @@ ID_SEPARATOR_PATTERN = r"[-\u2010-\u2015\u2212\s]?"
 IDENTIFIER_PATTERN = (
     r"(?<![A-Za-z0-9])(?P<prefix>(?i:BRV|F|C))"
     rf"(?P<sep>{ID_SEPARATOR_PATTERN})"
-    r"(?P<year>(?:19|20)[0-9O]{2})"
+    r"(?P<year>[12][09O][0-9O]{2})"
     rf"{ID_SEPARATOR_PATTERN}"
     r"(?P<serial>[0-9O]{2,4})(?![0-9])"
 )
@@ -91,6 +92,7 @@ DATE_MONTH_WORD_DAY_PATTERN = (
     r"(?:st|nd|rd|th)?,?\s+(?P<y>\d{4})(?!\d)"
 )
 SHORT_YEAR_CENTURY = 2000
+SHORT_YEAR_DIGITS = 2
 MONTH_FUZZY_MIN_LENGTH = 4
 MONTH_FUZZY_CUTOFF = 0.8
 MONTH_NUMBERS = {
