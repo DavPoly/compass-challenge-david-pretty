@@ -3,18 +3,6 @@
 import re
 from dataclasses import dataclass
 
-from archive.common.constants import (
-    DOC_TYPE_UNKNOWN,
-    EMAIL_PATTERN,
-    IDENTIFIER_DASH_CHARS,
-    IDENTIFIER_PATTERN,
-    IDENTIFIER_SERIAL_DIGITS,
-    LANG_EN,
-    LANG_FR,
-    LANG_HINTS_EN,
-    LANG_HINTS_FR,
-    LANG_WORD_PATTERN,
-)
 from archive.common.text.date_parsing_constants import (
     DATE_DAY_MONTH_WORD_PATTERN,
     DATE_ISO_PATTERN,
@@ -32,6 +20,18 @@ from archive.common.text.date_parsing_utils import (
 from archive.common.text.text_normalize_utils import (
     join_pages,
     normalize_for_match,
+)
+from archive.ingest.ingest_constants import (
+    DOC_TYPE_UNKNOWN,
+    EMAIL_PATTERN,
+    IDENTIFIER_DASH_CHARS,
+    IDENTIFIER_PATTERN,
+    IDENTIFIER_SERIAL_DIGITS,
+    LANG_EN,
+    LANG_FR,
+    LANG_HINTS_EN,
+    LANG_HINTS_FR,
+    LANG_WORD_PATTERN,
 )
 from archive.ingest.pdf_parse_gateway import ParsedDoc
 
