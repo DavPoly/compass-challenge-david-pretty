@@ -7,7 +7,8 @@ import pytest
 
 from archive.common.chunk_model import Chunk, ChunkKind
 from archive.ingest.index_builder_service import ManifestError
-from archive.retrieval.qdrant_gateway import QdrantGateway
+from archive.retrieval import search_service
+from archive.retrieval.qdrant_gateway import IndexOpenError, QdrantGateway
 from archive.retrieval.search_service import (
     SearchFilters,
     SearchHit,
@@ -130,12 +131,46 @@ def test_known_doc_ids_come_from_manifest(service: SearchService) -> None:
     assert service.known_doc_ids() == {"a", "b", "c"}
 
 
+def test_open_missing_index_raises_build_hint_and_creates_nothing(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(IndexOpenError, match="build_index"):
+        SearchService.open(tmp_path)
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_open_without_manifest_raises_and_releases_lock(
     tmp_path: Path,
 ) -> None:
+    built = QdrantGateway.open(tmp_path)
+    built.ensure_collection()
+    built.close()
     with pytest.raises(ManifestError):
         SearchService.open(tmp_path)
     QdrantGateway.open(tmp_path).close()
+
+
+def test_open_closes_gateway_on_keyboard_interrupt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    built = QdrantGateway.open(tmp_path)
+    built.ensure_collection()
+    built.close()
+    closed: list[str] = []
+    real_close = QdrantGateway.close
+
+    def spy(gateway: QdrantGateway) -> None:
+        closed.append("close")
+        real_close(gateway)
+
+    def interrupt(_index_dir: Path) -> frozenset[str]:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(QdrantGateway, "close", spy)
+    monkeypatch.setattr(search_service, "load_manifest", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        SearchService.open(tmp_path)
+    assert closed == ["close"]
 
 
 def _code_questions() -> list[tuple[str, set[str]]]:
