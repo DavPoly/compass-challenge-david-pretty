@@ -12,9 +12,9 @@ from archive.common.constants import (
     PARAGRAPH_BREAK,
     WORD_PATTERN,
 )
+from archive.common.text.text_normalize_utils import join_pages
 from archive.ingest.metadata_service import DocMetadata
 from archive.ingest.pdf_parse_gateway import ParsedDoc
-from archive.ingest.text_normalize_utils import join_pages
 
 _WORD = re.compile(WORD_PATTERN)
 

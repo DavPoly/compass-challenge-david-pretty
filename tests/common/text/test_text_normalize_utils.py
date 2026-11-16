@@ -1,6 +1,6 @@
 """Tests for text normalization."""
 
-from archive.ingest.text_normalize_utils import (
+from archive.common.text.text_normalize_utils import (
     join_pages,
     normalize_for_match,
     normalize_text,

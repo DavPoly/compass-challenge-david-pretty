@@ -1,7 +1,6 @@
 """Constantes partagées par plusieurs modules."""
 
 from pathlib import Path
-from typing import Final
 
 ENV_LLM_BASE_URL = "LLM_BASE_URL"
 ENV_LLM_API_KEY = "LLM_API_KEY"
@@ -36,13 +35,7 @@ STOPWORDS_EN = frozenset(
 
 STOPWORDS = STOPWORDS_FR | STOPWORDS_EN
 
-# --- Ingestion: text normalization, chunking, metadata -----------------
-
-UNICODE_COMPAT_FORM: Final = "NFKC"
-UNICODE_DECOMPOSED_FORM: Final = "NFKD"
-HORIZONTAL_SPACE_PATTERN = r"[ \t\f\v]+"
-BLANK_LINES_PATTERN = r"\n{3,}"
-PAGE_SEPARATOR = "\n\n"
+# --- Ingestion: chunking, metadata -------------------------------------
 
 # Tokens are approximated by whitespace-separated words.
 CHUNK_SINGLE_MAX_TOKENS = 800

@@ -27,11 +27,11 @@ from archive.common.constants import (
     SHORT_YEAR_CENTURY,
     SHORT_YEAR_DIGITS,
 )
-from archive.ingest.pdf_parse_gateway import ParsedDoc
-from archive.ingest.text_normalize_utils import (
+from archive.common.text.text_normalize_utils import (
     join_pages,
     normalize_for_match,
 )
+from archive.ingest.pdf_parse_gateway import ParsedDoc
 
 _IDENTIFIER = re.compile(IDENTIFIER_PATTERN)
 _EMAIL = re.compile(EMAIL_PATTERN)

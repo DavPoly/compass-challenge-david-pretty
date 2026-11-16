@@ -3,7 +3,7 @@
 import re
 import unicodedata
 
-from archive.common.constants import (
+from archive.common.text.text_normalize_constants import (
     BLANK_LINES_PATTERN,
     HORIZONTAL_SPACE_PATTERN,
     PAGE_SEPARATOR,
