@@ -229,14 +229,37 @@ so tests needing PDFs read from the kit's
 - 2026-11-16 (round 2): refactor commits 30/65/349/113 lines (the 349
   lands tables + consumers + pin tests together), merge diff 529
   lines — under the 700 merge budget; checks green, 232 tests.
+- 2026-11-16 (review): pre-commit review on bb65fa4..3cf56be: reviewer
+  — nothing blocking (teardown race MINOR, scroll spin NIT,
+  first-JSON-object repair burn NIT, one missing dedupe test);
+  quality — 14 MINOR/NIT, no MAJOR. Fix round fix/review-findings
+  merged as 52d2edf: 6 commits, 281 lines, 239 tests (+7).
+- 2026-11-16 (review): SearchService.close drains _read_lock under
+  QUERY_DRAIN_TIMEOUT_S (3 s) and closes anyway on expiry — teardown
+  can narrow the race but never hang the run; late worker writes are
+  debug-logged discards by design.
+- 2026-11-16 (review): declined — is_opened → except BaseException
+  rewrite (current form behavior-tested, avoids BaseException);
+  test-factory conftest consolidation + kit_samples fixture
+  (churn > win, deferred); try-each-balanced-object in
+  extract_json_object (low probability, repair flow delicate).
+- 2026-11-16 (review): duplicate-id test discriminates keep-first vs
+  keep-last but not the dedupe's presence — AnswerWriter dedupes too
+  and the workers race for the line; ordering is not exposed.
 
-## Resume point (2026-11-16, round 2 complete)
+## Resume point (2026-11-16, pre-commit review complete)
 
-Fix round 1 and round 2 merged on `feat/skeleton` (tip 3cf56be; 232
-tests, ruff + format + mypy --strict green). Round 2 refactor branch
-`refactor/unify-normalization` merged as 3cf56be (commits 36b837e,
-d3e9ad2, 1e49d7a, f2205ce); worktree and branch removed, nothing
-pushed. Next:
-- Pre-commit review on BASE bb65fa4..HEAD (reviewer + quality;
-  fix rounds capped at ~2).
-- V still pending: needs the user's `LLM_*` variables.
+Fix round 1, round 2 and the review fix round merged on `feat/skeleton`
+(tip 52d2edf; 239 tests, ruff + format + mypy --strict green).
+Pre-commit review (reviewer + quality) ran on bb65fa4..52d2edf:
+nothing blocking. One fix round fix/review-findings (6 commits, 281
+lines) merged as 52d2edf: teardown close under the read lock + late
+write guard, scroll empty-page break, run-level duplicate-id test,
+dash/exit-code single-sourcing, renames (AMBIGUOUS_DAY_MONTH_LIMIT,
+LOG_DOC_IDS_DIFFER, MSG_IO_ERROR), extract_identifiers without full
+metadata. Declined: is_opened rewrite (flag form is behavior-tested),
+test-factory conftest consolidation + kit_samples fixture (deferred),
+try-each-JSON-object (NIT, low probability). Next:
+- V: end-to-end run + robustness checks — needs the user's `LLM_*`
+  variables.
+- Push only on explicit approval.
