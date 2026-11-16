@@ -1,5 +1,7 @@
 import json
+import logging
 import os
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -9,6 +11,7 @@ from archive.common.chunk_model import Chunk, ChunkKind
 from archive.ingest.index_builder_service import ManifestError
 from archive.retrieval import search_service
 from archive.retrieval.qdrant_gateway import IndexOpenError, QdrantGateway
+from archive.retrieval.search_constants import LOG_CLOSE_TIMEOUT
 from archive.retrieval.search_service import (
     SearchFilters,
     SearchHit,
@@ -22,6 +25,9 @@ SAMPLES_DIR = Path(os.environ.get("ARCHIVE_TEST_SAMPLES", DEFAULT_SAMPLES))
 INDEX_DIR = Path(__file__).resolve().parents[2] / "index"
 TOP_K = 8
 CODE_QUESTION_COUNT = 5
+CLOSE_PROBE_S = 0.05
+JOIN_TIMEOUT_S = 5.0
+SHORT_DRAIN_TIMEOUT_S = 0.05
 
 
 def make_chunk(
@@ -171,6 +177,60 @@ def test_open_closes_gateway_on_keyboard_interrupt(
     with pytest.raises(KeyboardInterrupt):
         SearchService.open(tmp_path)
     assert closed == ["close"]
+
+
+def test_close_waits_for_an_in_flight_read(
+    service: SearchService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    closed: list[str] = []
+    real_close = QdrantGateway.close
+
+    def spy(gateway: QdrantGateway) -> None:
+        closed.append("close")
+        real_close(gateway)
+
+    monkeypatch.setattr(QdrantGateway, "close", spy)
+    close_done = threading.Event()
+
+    def close_service() -> None:
+        service.close()
+        close_done.set()
+
+    with service._read_lock:
+        closer = threading.Thread(target=close_service)
+        closer.start()
+        assert not close_done.wait(CLOSE_PROBE_S)
+        assert closed == []
+    assert close_done.wait(JOIN_TIMEOUT_S)
+    closer.join()
+    assert closed == ["close"]
+
+
+def test_close_times_out_on_a_stuck_read_and_warns(
+    service: SearchService,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    closed: list[str] = []
+    real_close = QdrantGateway.close
+
+    def spy(gateway: QdrantGateway) -> None:
+        closed.append("close")
+        real_close(gateway)
+
+    never = threading.Lock()
+    never.acquire()
+    monkeypatch.setattr(QdrantGateway, "close", spy)
+    monkeypatch.setattr(
+        search_service, "QUERY_DRAIN_TIMEOUT_S", SHORT_DRAIN_TIMEOUT_S
+    )
+    monkeypatch.setattr(service, "_read_lock", never)
+
+    with caplog.at_level(logging.WARNING):
+        service.close()
+
+    assert closed == ["close"]
+    assert LOG_CLOSE_TIMEOUT.partition("%.")[0] in caplog.text
 
 
 def _code_questions() -> list[tuple[str, set[str]]]:

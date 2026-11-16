@@ -144,7 +144,15 @@ def _work(
         # failure degrades to not_found and keeps the traceback in logs.
         logger.exception(LOG_UNEXPECTED_ERROR, question.id)
         answer = FinalAnswer.not_found(question.id)
-    if not writer.write(answer):
+    try:
+        written = writer.write(answer)
+    except Exception:
+        # Late results are discarded by design: the run may already be
+        # tearing down, so a closed answers file must not kill the
+        # worker thread silently.
+        logger.debug(LOG_LATE_RESULT, question.id, exc_info=True)
+        return
+    if not written:
         logger.warning(LOG_LATE_RESULT, question.id)
 
 

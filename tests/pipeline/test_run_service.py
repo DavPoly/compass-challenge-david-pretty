@@ -26,6 +26,7 @@ from archive.retrieval.search_service import (
     SearchService,
 )
 from archive.validation.answer_model import AnswerStatus, DraftAnswer
+from archive.validation.input_model import Question
 
 DOC_COUNT = 4
 BUILD_WORKERS = 2
@@ -51,6 +52,15 @@ class FakeClock:
     def sleep(self, seconds: float) -> None:
         self.now_s += seconds
         time.sleep(TICK_SLEEP_S)
+
+
+class StubContext:
+    """Minimal run context: a stale question never reaches search."""
+
+    deadline_s = QUESTION_BUDGET_S
+
+    def clock(self) -> float:
+        return 0.0
 
 
 class FakeLlm:
@@ -413,3 +423,19 @@ def test_citation_outside_the_corpus_is_dropped(
     assert read_answers(answers)["q"]["citations"] == []
     assert gone.stem not in {p.stem for p in partial.glob("*.pdf")}
     assert "doc ids differ" in caplog.text
+
+
+def test_late_write_to_a_closed_answers_file_is_discarded(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    out = (tmp_path / "a.jsonl").open("w", encoding="utf-8", newline="\n")
+    writer = run_service.AnswerWriter(out)
+    out.close()
+    stale = Question(id="q", question="", is_valid=False, error="empty")
+
+    with caplog.at_level(logging.DEBUG, logger=run_service.__name__):
+        run_service._work(
+            stale, writer, run_service.StartTimes(), StubContext()
+        )
+
+    assert "late result discarded" in caplog.text

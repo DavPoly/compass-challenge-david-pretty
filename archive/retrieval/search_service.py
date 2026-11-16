@@ -4,6 +4,7 @@
 `hybrid_search` and `list_by_filter`.
 """
 
+import logging
 import threading
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -21,8 +22,15 @@ from archive.retrieval.qdrant_constants import (
     FIELD_IDENTIFIERS,
 )
 from archive.retrieval.qdrant_gateway import QdrantGateway
-from archive.retrieval.search_constants import QUERY_DOC_ID, UNRANKED_SCORE
+from archive.retrieval.search_constants import (
+    LOG_CLOSE_TIMEOUT,
+    QUERY_DOC_ID,
+    QUERY_DRAIN_TIMEOUT_S,
+    UNRANKED_SCORE,
+)
 from archive.retrieval.sparse_encoding_utils import sparse_vector
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -148,7 +156,20 @@ class SearchService:
         return [SearchHit(chunk, UNRANKED_SCORE) for chunk in chunks]
 
     def close(self) -> None:
-        """Release the index."""
+        """Release the index, after a bounded drain of in-flight reads.
+
+        A worker may still be inside a query when the run gives up on
+        it: the gateway is closed under `_read_lock` so a query cannot
+        start mid-close, but the wait is bounded — teardown logs and
+        closes anyway rather than hanging the run.
+        """
+        if self._read_lock.acquire(timeout=QUERY_DRAIN_TIMEOUT_S):
+            try:
+                self._gateway.close()
+            finally:
+                self._read_lock.release()
+            return
+        logger.warning(LOG_CLOSE_TIMEOUT, QUERY_DRAIN_TIMEOUT_S)
         self._gateway.close()
 
     def __enter__(self) -> "SearchService":
