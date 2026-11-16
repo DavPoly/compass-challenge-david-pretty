@@ -191,27 +191,31 @@ so tests needing PDFs read from the kit's
   duplicate question ids keep the first occurrence.
 - 2026-11-16: V is blocked on the user's `LLM_*` variables, so the
   pre-commit review runs before V instead of after.
+- 2026-11-16 (fix round 1): every regression test mutation-verified —
+  fails with its fix reverted. run-exit finished two broken edits:
+  DOCUMENT_TAG_ESCAPE needs a double backslash (r"<\\document") and
+  the tag regex needs re.IGNORECASE; tests/agent/test_draft_service.py
+  joined run-exit's owned set as the only home for the tag tests.
+- 2026-11-16 (fix round 1): amounts round half up (0.125 $ → 0.13) via
+  AMOUNT_ROUNDING/_format_amount, inferred from required behaviour;
+  drop AMOUNT_ROUNDING if the scorer proves half-even.
+- 2026-11-16 (fix round 1): index-integrity renamed
+  test_tracer_spike.py → test_sparse_code_ranking.py (30-PDF ranking
+  probe) and took tests/retrieval/test_search_service.py into its
+  owned set for the open/close-on-failure tests.
+- 2026-11-16 (fix round 1): slices committed as 309/261/325/382 lines,
+  all over the 200-line soft commit budget with no clean split; merged
+  --no-ff as 595ac80/92eb544/6975a53/44a89b7, all checks green
+  (223 tests) on feat/skeleton.
 
-## Resume point (2026-11-16, session stopped near context limit)
+## Resume point (2026-11-16, fix round 1 complete)
 
-T0–T5 merged on `feat/skeleton`; 180 tests, ruff and mypy pass. Review
-done (reviewer + quality). Fix round 1 was interrupted: the four
-worktrees `.claude/temp_worktree/{run-exit,llm-repair,validation-formats,
-index-integrity}` (branches `fix/<slug>`, cut from b8225d4) hold
-UNCOMMITTED, unverified partial edits. Next session: inspect each diff,
-then relaunch an implement subagent per worktree to finish, test and
-commit, then merge `--no-ff`. Scope per slice:
-- run-exit: `os._exit` after flushing in `answer.py`; deadline from
-  `run()` entry; known ids ∩ `corpus/` stems; case-insensitive
-  `<document`/`</document` escaping; raw-string fix in prompt_constants.
-- llm-repair: no empty assistant turn in repair; 408/409 retryable;
-  status-specific fatal hints; literals to constants; simpler control flow.
-- validation-formats: `coerce_numbers_to_str`; bare-string citations;
-  slash dates converted only when day > 12; `0.125 $` amount bug; typed
-  `IssueCode`/`ValidationIssue`.
-- index-integrity: `IndexOpenError` when the collection is missing; no
-  `ignore_errors` rmtree; manifest deleted before rebuild; sparse encoding
-  moved to `retrieval/sparse_encoding_utils.py` (byte-identical tokens).
-Round 2 (after): unify month tables/date parsing and accent stripping,
-move text normalize utils to `common/`, split `common/constants.py`.
-V still pending: needs the user's `LLM_*` variables.
+T0–T5 and fix round 1 merged on `feat/skeleton` (tip 44a89b7; 223
+tests, ruff + format + mypy --strict green). Fix round 1 slices:
+run-exit (e238715), llm-repair (3d08ba2), validation-formats (edfea51),
+index-integrity (2b4aee1); worktrees and branches removed, nothing
+pushed. Next:
+- Round 2: unify month tables/date parsing and accent stripping,
+  move text normalize utils to `common/`, split `common/constants.py`.
+- Pre-commit review on BASE bb65fa4..HEAD (fix rounds capped at ~2).
+- V still pending: needs the user's `LLM_*` variables.
