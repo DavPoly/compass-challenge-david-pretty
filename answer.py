@@ -12,9 +12,11 @@ Exit codes: 0 run completed, 1 unusable input or configuration,
 """
 
 import logging
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from typing import NoReturn
 
 from archive.common.config import AppConfig, ConfigError
 from archive.pipeline.pipeline_constants import EXIT_ERROR, EXIT_USAGE
@@ -38,8 +40,20 @@ def main(argv: Sequence[str]) -> int:
     return run(Path(argv[0]), Path(argv[1]), config)
 
 
+def exit_now(code: int) -> NoReturn:
+    """Flush logs and std streams, then end the process at once.
+
+    Worker threads stuck in a network call would otherwise be joined at
+    interpreter exit; the answers file is already closed by `run`.
+    """
+    logging.shutdown()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
+
+
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO, format=LOG_FORMAT, stream=sys.stderr
     )
-    sys.exit(main(sys.argv[1:]))
+    exit_now(main(sys.argv[1:]))

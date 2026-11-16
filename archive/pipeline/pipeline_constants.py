@@ -20,3 +20,16 @@ MSG_CANNOT_WRITE = (
     "Cannot write answers file {path}: {reason}. Choose a writable path."
 )
 MSG_INDEX_OPEN = "Cannot open the index at {path}: {reason}"
+MSG_DOC_IDS_DIFFER = (
+    "manifest and corpus doc ids differ: %d in manifest, %d in corpus, "
+    "%d valid; rebuild the index if the corpus changed"
+)
+LOG_QUESTION_INVALID = "question %s invalid (%s): not_found"
+LOG_QUESTION_ISSUE = "question %s: %s"
+LOG_DROPPED_CITATIONS = "question %s: dropped citations %s"
+LOG_LLM_UNAVAILABLE = "question %s: LLM unavailable: %s"
+LOG_UNEXPECTED_ERROR = "question %s: unexpected error"
+LOG_LATE_RESULT = "question %s: late result discarded"
+LOG_OVER_BUDGET = "question %s: over %.0f s budget, not_found"
+LOG_DEADLINE_REACHED = "question %s: global deadline reached, not_found"
+LOG_DUPLICATE_ID = "duplicate question id %s ignored"

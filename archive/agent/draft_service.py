@@ -1,12 +1,14 @@
 """Build the draft prompt and ask the LLM for a structured answer."""
 
 import logging
+import re
 from collections.abc import Sequence
 
 from archive.agent.prompt_constants import (
     DOCUMENT_CLOSE,
-    DOCUMENT_CLOSE_ESCAPED,
     DOCUMENT_OPEN,
+    DOCUMENT_TAG_ESCAPE,
+    DOCUMENT_TAG_PATTERN,
     MAX_PROMPT_CHUNKS,
     NO_DOCUMENTS_MISSING,
     SYSTEM_PROMPT,
@@ -20,12 +22,14 @@ from archive.validation.validation_constants import NOT_FOUND_ANSWER
 
 logger = logging.getLogger(__name__)
 
+_DOCUMENT_TAG = re.compile(DOCUMENT_TAG_PATTERN, re.IGNORECASE)
+
 
 def format_documents(hits: Sequence[SearchHit]) -> str:
     """Wrap the top chunks in untrusted-data delimiters, keyed by doc id."""
     blocks = []
     for hit in hits[:MAX_PROMPT_CHUNKS]:
-        text = hit.chunk.text.replace(DOCUMENT_CLOSE, DOCUMENT_CLOSE_ESCAPED)
+        text = _DOCUMENT_TAG.sub(DOCUMENT_TAG_ESCAPE, hit.chunk.text)
         opening = DOCUMENT_OPEN.format(doc_id=hit.chunk.doc_id)
         blocks.append(f"{opening}\n{text}\n{DOCUMENT_CLOSE}")
     return "\n\n".join(blocks)
