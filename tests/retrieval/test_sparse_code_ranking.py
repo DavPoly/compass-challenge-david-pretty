@@ -1,4 +1,4 @@
-"""Spike: index real PDFs and find each document by a unique code."""
+"""Index real PDFs and rank each document first by a unique code."""
 
 import re
 from collections import defaultdict
@@ -6,7 +6,8 @@ from pathlib import Path
 
 from archive.common.chunk_model import Chunk, ChunkKind
 from archive.ingest.pdf_parse_gateway import parse_pdf
-from archive.retrieval.qdrant_gateway import QdrantGateway, sparse_vector
+from archive.retrieval.qdrant_gateway import QdrantGateway
+from archive.retrieval.sparse_encoding_utils import sparse_vector
 
 DOC_COUNT = 30
 TOP_K = 3

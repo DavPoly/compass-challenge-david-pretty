@@ -33,6 +33,10 @@ class ManifestError(Exception):
     """Raised when the index manifest is missing or invalid."""
 
 
+class IndexBuildError(Exception):
+    """Raised when the previous index cannot be cleared for a rebuild."""
+
+
 class ManifestEntry(TypedDict):
     """Size in bytes and SHA-1 of an indexed PDF."""
 
@@ -68,7 +72,9 @@ def build(
     PDFs are parsed in worker processes; the main process upserts the
     chunks and writes `manifest.json` last. A PDF that cannot be parsed
     is logged, left out of the index and counted in the report. The
-    previous `<index_dir>/qdrant` directory is deleted first.
+    previous manifest and `<index_dir>/qdrant` directory are deleted
+    first, so an aborted build leaves no manifest. Any other exception
+    in a worker is also logged and counted as a failure.
 
     Args:
         corpus_dir: Directory of `*.pdf` files.
@@ -77,10 +83,13 @@ def build(
 
     Returns:
         Counts of documents, chunks and failures, and the duration.
+
+    Raises:
+        IndexBuildError: if the previous index cannot be deleted.
     """
     started = time.monotonic()
     paths = sorted(corpus_dir.glob(PDF_GLOB))
-    shutil.rmtree(index_dir / QDRANT_SUBDIR, ignore_errors=True)
+    _clear_previous_index(index_dir)
     manifest: dict[str, ManifestEntry] = {}
     failed: list[str] = []
     chunk_count = 0
@@ -109,6 +118,20 @@ def build(
         failed_docs=failed,
         seconds=time.monotonic() - started,
     )
+
+
+def _clear_previous_index(index_dir: Path) -> None:
+    storage = index_dir / QDRANT_SUBDIR
+    try:
+        (index_dir / MANIFEST_FILE_NAME).unlink(missing_ok=True)
+        shutil.rmtree(storage, ignore_errors=False)
+    except FileNotFoundError:
+        return
+    except OSError as error:
+        raise IndexBuildError(
+            f"Cannot delete the previous index at {storage}: {error}. "
+            "Close any process using it and retry."
+        ) from error
 
 
 def load_manifest(index_dir: Path) -> dict[str, ManifestEntry]:
@@ -152,9 +175,12 @@ def _parse_file(path: Path) -> _ParsedFile:
     """Worker: parse, extract metadata and chunk one PDF."""
     try:
         doc = parse_pdf(path)
+        chunks = chunk_document(doc, extract_metadata(doc))
     except PdfParseError as error:
         return _ParsedFile(path.stem, None, [], str(error))
-    chunks = chunk_document(doc, extract_metadata(doc))
+    except Exception as error:  # any worker failure must not abort the build
+        message = f"{type(error).__name__}: {error}"
+        return _ParsedFile(path.stem, None, [], message)
     return _ParsedFile(path.stem, _file_entry(path), chunks, None)
 
 

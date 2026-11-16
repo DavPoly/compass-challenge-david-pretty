@@ -5,9 +5,13 @@ import pytest
 from qdrant_client import models
 
 from archive.common.chunk_model import Chunk, ChunkKind
+from archive.retrieval.qdrant_constants import SPARSE_VECTOR_NAME
 from archive.retrieval.qdrant_gateway import (
     IndexOpenError,
     QdrantGateway,
+)
+from archive.retrieval.sparse_encoding_utils import (
+    point_id,
     sparse_vector,
     tokenize,
 )
@@ -101,3 +105,39 @@ def test_open_locked_index_raises(tmp_path: Path) -> None:
             QdrantGateway.open(tmp_path)
     finally:
         first.close()
+
+
+def test_open_existing_without_storage_raises_and_creates_nothing(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(IndexOpenError, match="build_index"):
+        QdrantGateway.open_existing(tmp_path)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_open_existing_with_empty_storage_creates_nothing(
+    tmp_path: Path,
+) -> None:
+    storage = tmp_path / "qdrant"
+    storage.mkdir()
+    with pytest.raises(IndexOpenError, match="build_index"):
+        QdrantGateway.open_existing(tmp_path)
+    assert list(storage.iterdir()) == []
+
+
+def test_open_existing_without_collection_raises(tmp_path: Path) -> None:
+    QdrantGateway.open(tmp_path).close()
+    with pytest.raises(IndexOpenError, match="archive_chunks"):
+        QdrantGateway.open_existing(tmp_path)
+    QdrantGateway.open(tmp_path).close()
+
+
+def test_to_point_uses_shared_sparse_encoding() -> None:
+    chunk = make_chunk("a#0", "budget approuvé BRV-2023-06")
+    point = QdrantGateway._to_point(chunk)
+    assert point.id == point_id("a#0")
+    assert point.vector == {
+        SPARSE_VECTOR_NAME: sparse_vector("budget approuvé BRV-2023-06")
+    }
+    assert point.payload is not None
+    assert point.payload["doc_id"] == "a"

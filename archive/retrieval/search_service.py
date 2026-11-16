@@ -1,8 +1,7 @@
 """Search over the indexed chunks: filters, identifiers, hybrid search.
 
-The roadmap names `hybrid_search` and `list_by_filter` as module
-functions; they are methods of `SearchService`, which owns the shared
-embedded index.
+`SearchService` owns the shared embedded index and exposes
+`hybrid_search` and `list_by_filter`.
 """
 
 import threading
@@ -16,14 +15,14 @@ from archive.common.chunk_model import Chunk
 from archive.ingest.index_builder_service import load_manifest
 from archive.ingest.metadata_service import extract_metadata
 from archive.ingest.pdf_parse_gateway import ParsedDoc
-from archive.retrieval.qdrant_gateway import QdrantGateway, sparse_vector
-from archive.retrieval.search_constants import (
+from archive.retrieval.qdrant_constants import (
     FIELD_DOC_DATE,
     FIELD_DOC_TYPE,
     FIELD_IDENTIFIERS,
-    QUERY_DOC_ID,
-    UNRANKED_SCORE,
 )
+from archive.retrieval.qdrant_gateway import QdrantGateway
+from archive.retrieval.search_constants import QUERY_DOC_ID, UNRANKED_SCORE
+from archive.retrieval.sparse_encoding_utils import sparse_vector
 
 
 @dataclass(frozen=True)
@@ -102,15 +101,18 @@ class SearchService:
         """Open the index under `index_dir` and its manifest.
 
         Raises:
-            IndexOpenError: if the storage cannot be opened.
+            IndexOpenError: if the storage is missing or unusable.
             ManifestError: if the manifest is missing or invalid.
         """
-        gateway = QdrantGateway.open(index_dir)
+        gateway = QdrantGateway.open_existing(index_dir)
+        is_opened = False
         try:
-            return cls(gateway, index_dir)
-        except Exception:
-            gateway.close()
-            raise
+            service = cls(gateway, index_dir)
+            is_opened = True
+            return service
+        finally:
+            if not is_opened:
+                gateway.close()
 
     def known_doc_ids(self) -> frozenset[str]:
         """Ids of every indexed document, from the manifest."""

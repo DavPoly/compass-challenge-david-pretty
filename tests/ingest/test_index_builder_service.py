@@ -1,11 +1,16 @@
 import json
 import shutil
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from archive.ingest import index_builder_service
 from archive.ingest.index_builder_service import (
+    IndexBuildError,
     ManifestError,
+    _clear_previous_index,
+    _parse_file,
     build,
     load_manifest,
 )
@@ -79,3 +84,59 @@ def test_load_manifest_roundtrip(tmp_path: Path) -> None:
     expected = {"doc_1": {"size": 3, "sha1": "ab"}}
     (tmp_path / "manifest.json").write_text(json.dumps(expected))
     assert load_manifest(tmp_path) == expected
+
+
+def test_rebuild_failure_to_clear_leaves_no_manifest(
+    mini_corpus: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index_dir = tmp_path / "index"
+    build(mini_corpus, index_dir, WORKERS)
+
+    def refuse(*_args: Any, **_kwargs: Any) -> None:
+        raise PermissionError("locked")
+
+    monkeypatch.setattr(index_builder_service.shutil, "rmtree", refuse)
+    with pytest.raises(IndexBuildError, match="previous index"):
+        build(mini_corpus, index_dir, WORKERS)
+    assert not (index_dir / "manifest.json").exists()
+
+
+def test_aborted_build_leaves_no_manifest(
+    mini_corpus: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index_dir = tmp_path / "index"
+    build(mini_corpus, index_dir, WORKERS)
+
+    def abort(*_args: Any, **_kwargs: Any) -> Any:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(index_builder_service, "_parse_all", abort)
+    with pytest.raises(KeyboardInterrupt):
+        build(mini_corpus, index_dir, WORKERS)
+    assert not (index_dir / "manifest.json").exists()
+
+
+def test_clear_previous_index_handles_missing_storage(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "manifest.json").write_text("{}")
+    _clear_previous_index(tmp_path)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_unexpected_worker_error_is_a_counted_failure(
+    mini_corpus: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def explode(*_args: Any, **_kwargs: Any) -> None:
+        raise ValueError("boom")
+
+    monkeypatch.setattr(index_builder_service, "chunk_document", explode)
+    path = sorted(mini_corpus.glob("*.pdf"))[0]
+    parsed = _parse_file(path)
+    assert parsed.entry is None
+    assert parsed.doc_id == path.stem
+    assert parsed.error == "ValueError: boom"
