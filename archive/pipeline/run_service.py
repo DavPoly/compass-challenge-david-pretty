@@ -11,6 +11,7 @@ from typing import TextIO
 
 from archive.agent.draft_service import draft
 from archive.common.config import AppConfig
+from archive.common.constants import PDF_GLOB
 from archive.ingest.index_builder_service import ManifestError
 from archive.llm.llm_gateway import LlmGateway, LlmUnavailableError
 from archive.pipeline.pipeline_constants import (
@@ -18,7 +19,17 @@ from archive.pipeline.pipeline_constants import (
     EXIT_ERROR,
     EXIT_OK,
     GLOBAL_DEADLINE_S,
+    LOG_DEADLINE_REACHED,
+    LOG_DROPPED_CITATIONS,
+    LOG_DUPLICATE_ID,
+    LOG_LATE_RESULT,
+    LOG_LLM_UNAVAILABLE,
+    LOG_OVER_BUDGET,
+    LOG_QUESTION_INVALID,
+    LOG_QUESTION_ISSUE,
+    LOG_UNEXPECTED_ERROR,
     MSG_CANNOT_WRITE,
+    MSG_DOC_IDS_DIFFER,
     MSG_INDEX_OPEN,
     MSG_NO_CORPUS,
     POLL_INTERVAL_S,
@@ -45,8 +56,28 @@ class RunContext:
 
     search: SearchService
     llm: LlmGateway
+    valid_doc_ids: frozenset[str]
+    deadline_s: float
     clock: Callable[[], float]
     sleep: Callable[[float], None]
+
+
+class StartTimes:
+    """Thread-safe record of when workers began each question."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._started_at: dict[str, float] = {}
+
+    def mark(self, question_id: str, now_s: float) -> None:
+        """Record when a worker began the question."""
+        with self._lock:
+            self._started_at[question_id] = now_s
+
+    def get(self, question_id: str) -> float | None:
+        """Start time of the question, None while it is still queued."""
+        with self._lock:
+            return self._started_at.get(question_id)
 
 
 class AnswerWriter:
@@ -56,7 +87,6 @@ class AnswerWriter:
         self._out = out
         self._lock = threading.Lock()
         self._written_ids: set[str] = set()
-        self._started_at: dict[str, float] = {}
 
     def write(self, answer: FinalAnswer) -> bool:
         """Write the line unless the id has one; return if written."""
@@ -68,47 +98,29 @@ class AnswerWriter:
             self._written_ids.add(answer.id)
             return True
 
-    def mark_started(self, question_id: str, now_s: float) -> None:
-        """Record when a worker began the question."""
-        with self._lock:
-            self._started_at[question_id] = now_s
-
     def is_written(self, question_id: str) -> bool:
         """Whether the question already has its line."""
         with self._lock:
             return question_id in self._written_ids
 
-    def started_at(self, question_id: str) -> float | None:
-        """Start time of the question, None while it is still queued."""
-        with self._lock:
-            return self._started_at.get(question_id)
 
-
-def _answer_question(
-    question: Question, search: SearchService, llm: LlmGateway
-) -> FinalAnswer:
+def _answer_question(question: Question, context: RunContext) -> FinalAnswer:
     if not question.is_valid:
-        logger.warning(
-            "question %s invalid (%s): not_found",
-            question.id,
-            question.error,
-        )
+        logger.warning(LOG_QUESTION_INVALID, question.id, question.error)
         return FinalAnswer.not_found(question.id)
-    hits = search.hybrid_search(question.question, None, SEARCH_TOP_K)
+    hits = context.search.hybrid_search(question.question, None, SEARCH_TOP_K)
     retrieved_ids = {hit.chunk.doc_id for hit in hits}
     result = validate(
         question.id,
-        draft(question, hits, llm),
+        draft(question, hits, context.llm),
         retrieved_ids,
-        search.known_doc_ids(),
+        context.valid_doc_ids,
     )
     for issue in result.issues:
-        logger.info("question %s: %s", question.id, issue)
+        logger.info(LOG_QUESTION_ISSUE, question.id, issue)
     if result.dropped_citations:
         logger.warning(
-            "question %s: dropped citations %s",
-            question.id,
-            result.dropped_citations,
+            LOG_DROPPED_CITATIONS, question.id, result.dropped_citations
         )
     return result.answer
 
@@ -116,63 +128,59 @@ def _answer_question(
 def _work(
     question: Question,
     writer: AnswerWriter,
+    starts: StartTimes,
     context: RunContext,
-    deadline_s: float,
 ) -> None:
-    if context.clock() >= deadline_s:
+    if context.clock() >= context.deadline_s:
         return
-    writer.mark_started(question.id, context.clock())
+    starts.mark(question.id, context.clock())
     try:
-        answer = _answer_question(question, context.search, context.llm)
+        answer = _answer_question(question, context)
     except LlmUnavailableError as error:
-        logger.error("question %s: LLM unavailable: %s", question.id, error)
+        logger.error(LOG_LLM_UNAVAILABLE, question.id, error)
         answer = FinalAnswer.not_found(question.id)
     except Exception:
         # A single question must never kill the run: any unexpected
         # failure degrades to not_found and keeps the traceback in logs.
-        logger.exception("question %s: unexpected error", question.id)
+        logger.exception(LOG_UNEXPECTED_ERROR, question.id)
         answer = FinalAnswer.not_found(question.id)
     if not writer.write(answer):
-        logger.warning("question %s: late result discarded", question.id)
+        logger.warning(LOG_LATE_RESULT, question.id)
 
 
 def _expire_overdue(
-    questions: list[Question], writer: AnswerWriter, now_s: float
+    questions: list[Question],
+    writer: AnswerWriter,
+    starts: StartTimes,
+    now_s: float,
 ) -> None:
     for question in questions:
-        started = writer.started_at(question.id)
+        started = starts.get(question.id)
         if started is None or now_s - started < QUESTION_BUDGET_S:
             continue
         if writer.write(FinalAnswer.not_found(question.id)):
-            logger.error(
-                "question %s: over %.0f s budget, not_found",
-                question.id,
-                QUESTION_BUDGET_S,
-            )
+            logger.error(LOG_OVER_BUDGET, question.id, QUESTION_BUDGET_S)
 
 
 def _fill_unanswered(questions: list[Question], writer: AnswerWriter) -> None:
     for question in questions:
         if writer.write(FinalAnswer.not_found(question.id)):
-            logger.error(
-                "question %s: global deadline reached, not_found",
-                question.id,
-            )
+            logger.error(LOG_DEADLINE_REACHED, question.id)
 
 
 def _process_all(
     questions: list[Question], writer: AnswerWriter, context: RunContext
 ) -> None:
-    deadline_s = context.clock() + GLOBAL_DEADLINE_S
+    starts = StartTimes()
     pool = ThreadPoolExecutor(max_workers=WORKER_COUNT)
     try:
         for question in questions:
-            pool.submit(_work, question, writer, context, deadline_s)
+            pool.submit(_work, question, writer, starts, context)
         while not all(writer.is_written(q.id) for q in questions):
             now_s = context.clock()
-            if now_s >= deadline_s:
+            if now_s >= context.deadline_s:
                 break
-            _expire_overdue(questions, writer, now_s)
+            _expire_overdue(questions, writer, starts, now_s)
             context.sleep(POLL_INTERVAL_S)
         _fill_unanswered(questions, writer)
     finally:
@@ -185,7 +193,7 @@ def _unique(questions: list[Question]) -> list[Question]:
     unique = []
     for question in questions:
         if question.id in seen:
-            logger.warning("duplicate question id %s ignored", question.id)
+            logger.warning(LOG_DUPLICATE_ID, question.id)
             continue
         seen.add(question.id)
         unique.append(question)
@@ -193,7 +201,21 @@ def _unique(questions: list[Question]) -> list[Question]:
 
 
 def _has_pdfs(corpus_dir: Path) -> bool:
-    return corpus_dir.is_dir() and any(corpus_dir.glob("*.pdf"))
+    return corpus_dir.is_dir() and any(corpus_dir.glob(PDF_GLOB))
+
+
+def _valid_doc_ids(search: SearchService, corpus_dir: Path) -> frozenset[str]:
+    manifest_ids = set(search.known_doc_ids())
+    corpus_ids = {path.stem for path in corpus_dir.glob(PDF_GLOB)}
+    valid = frozenset(manifest_ids & corpus_ids)
+    if manifest_ids != corpus_ids:
+        logger.warning(
+            MSG_DOC_IDS_DIFFER,
+            len(manifest_ids),
+            len(corpus_ids),
+            len(valid),
+        )
+    return valid
 
 
 def run(
@@ -214,6 +236,7 @@ def run(
         corpus, questions file, index or output file is unusable. The
         reason is logged as an error.
     """
+    deadline_s = clock() + GLOBAL_DEADLINE_S
     if not _has_pdfs(config.corpus_dir):
         logger.error(MSG_NO_CORPUS.format(path=config.corpus_dir))
         return EXIT_ERROR
@@ -231,7 +254,14 @@ def run(
         return EXIT_ERROR
     with search:
         try:
-            context = RunContext(search, LlmGateway(config), clock, sleep)
+            context = RunContext(
+                search,
+                LlmGateway(config),
+                _valid_doc_ids(search, config.corpus_dir),
+                deadline_s,
+                clock,
+                sleep,
+            )
             with answers_path.open(
                 "w", encoding=ANSWERS_ENCODING, newline="\n"
             ) as out:

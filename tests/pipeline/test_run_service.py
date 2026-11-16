@@ -16,10 +16,15 @@ from archive.pipeline.pipeline_constants import (
     EXIT_ERROR,
     EXIT_OK,
     GLOBAL_DEADLINE_S,
+    POLL_INTERVAL_S,
     QUESTION_BUDGET_S,
     WORKER_COUNT,
 )
-from archive.retrieval.search_service import SearchFilters, SearchService
+from archive.retrieval.search_service import (
+    SearchFilters,
+    SearchHit,
+    SearchService,
+)
 from archive.validation.answer_model import AnswerStatus, DraftAnswer
 
 DOC_COUNT = 4
@@ -30,6 +35,7 @@ STOP_ONLY_QUESTION = "le la les"
 SLOW_MARK = "SLOWQUESTION"
 TICK_SLEEP_S = 0.001
 JOIN_TIMEOUT_S = 5.0
+INDEX_SCAN_LIMIT = 1000
 EXPECTED_VALID_STATUSES = {s.value for s in AnswerStatus}
 
 
@@ -317,3 +323,93 @@ def test_unwritable_answers_path_exits_one(
     )
 
     assert code == EXIT_ERROR
+
+
+def test_deadline_clock_starts_before_index_loading(
+    indexed: tuple[AppConfig, str],
+    fake_llm: FakeLlm,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fake = FakeClock()
+    real_open = SearchService.open
+    load_cost_s = GLOBAL_DEADLINE_S - QUESTION_BUDGET_S / 2
+
+    def slow_open(index_dir: Path) -> SearchService:
+        fake.now_s += load_cost_s
+        return real_open(index_dir)
+
+    monkeypatch.setattr(SearchService, "open", staticmethod(slow_open))
+    config, query = indexed
+    questions = write_questions(
+        tmp_path / "q.jsonl", [{"id": "q", "question": f"{query} {SLOW_MARK}"}]
+    )
+    answers = tmp_path / "a.jsonl"
+
+    code = run_service.run(questions, answers, config, fake.clock, fake.sleep)
+    fake_llm.release.set()
+
+    assert code == EXIT_OK
+    assert read_answers(answers)["q"]["status"] == "not_found"
+    assert (
+        GLOBAL_DEADLINE_S
+        <= fake.now_s
+        <= (GLOBAL_DEADLINE_S + POLL_INTERVAL_S)
+    )
+
+
+def test_run_returns_by_deadline_when_a_worker_never_returns(
+    indexed: tuple[AppConfig, str], fake_llm: FakeLlm, tmp_path: Path
+) -> None:
+    config, query = indexed
+    questions = write_questions(
+        tmp_path / "q.jsonl", [{"id": "q", "question": f"{query} {SLOW_MARK}"}]
+    )
+    answers = tmp_path / "a.jsonl"
+
+    code, fake = run_with_clock(questions, answers, config)
+
+    assert code == EXIT_OK
+    assert not fake_llm.finished.is_set()
+    assert fake.now_s <= GLOBAL_DEADLINE_S + POLL_INTERVAL_S
+    assert read_answers(answers)["q"]["status"] == "not_found"
+    fake_llm.release.set()
+
+
+def test_citation_outside_the_corpus_is_dropped(
+    indexed: tuple[AppConfig, str],
+    fake_llm: FakeLlm,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    config, query = indexed
+    pdfs = sorted(config.corpus_dir.glob("*.pdf"))
+    kept, gone = pdfs[0], pdfs[-1]
+    partial = tmp_path / "corpus"
+    partial.mkdir()
+    shutil.copy(kept, partial / kept.name)
+    partial_config = AppConfig("u", "k", "m", partial, config.index_dir)
+
+    def only_the_gone_doc(
+        service: SearchService,
+        text: str,
+        filters: SearchFilters | None,
+        k: int,
+    ) -> list[SearchHit]:
+        hits = service.list_by_filter(SearchFilters(), INDEX_SCAN_LIMIT)
+        return [hit for hit in hits if hit.chunk.doc_id == gone.stem][:1]
+
+    monkeypatch.setattr(SearchService, "hybrid_search", only_the_gone_doc)
+    questions = write_questions(
+        tmp_path / "q.jsonl", [{"id": "q", "question": query}]
+    )
+    answers = tmp_path / "a.jsonl"
+
+    with caplog.at_level(logging.WARNING):
+        code = run_service.run(questions, answers, partial_config)
+
+    assert code == EXIT_OK
+    assert read_answers(answers)["q"]["citations"] == []
+    assert gone.stem not in {p.stem for p in partial.glob("*.pdf")}
+    assert "doc ids differ" in caplog.text

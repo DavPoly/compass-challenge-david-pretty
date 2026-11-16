@@ -3,7 +3,9 @@
 MAX_PROMPT_CHUNKS = 8
 DOCUMENT_OPEN = '<document id="{doc_id}">'
 DOCUMENT_CLOSE = "</document>"
-DOCUMENT_CLOSE_ESCAPED = "<\/document>"
+DOCUMENT_TAG_PATTERN = r"<(/?)document"
+# The doubled backslash survives the re.sub template: "<\document".
+DOCUMENT_TAG_ESCAPE = r"<\\document"
 
 SYSTEM_PROMPT = """\
 You answer questions about a corpus of business documents (invoices, \
