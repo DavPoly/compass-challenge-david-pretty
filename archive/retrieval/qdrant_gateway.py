@@ -2,7 +2,6 @@
 
 import re
 import threading
-import unicodedata
 import uuid
 import warnings
 import zlib
@@ -14,6 +13,7 @@ from qdrant_client import QdrantClient, models
 
 from archive.common.chunk_model import Chunk
 from archive.common.constants import STOPWORDS
+from archive.ingest.text_normalize_utils import normalize_for_match
 from archive.retrieval.qdrant_constants import (
     CODE_PATTERN,
     COLLECTION_NAME,
@@ -37,12 +37,6 @@ class IndexOpenError(Exception):
     """Raised when the Qdrant index cannot be opened."""
 
 
-def _fold(text: str) -> str:
-    """Lowercase and strip accents."""
-    decomposed = unicodedata.normalize("NFKD", text.lower())
-    return "".join(c for c in decomposed if not unicodedata.combining(c))
-
-
 def tokenize(text: str) -> list[str]:
     """Split text into match tokens.
 
@@ -51,7 +45,7 @@ def tokenize(text: str) -> list[str]:
     exact-code queries match strongly and partial ones still match.
     Stopwords and empty tokens are dropped.
     """
-    folded = _fold(text)
+    folded = normalize_for_match(text)
     tokens = [
         code
         for code in _CODE.findall(folded)
