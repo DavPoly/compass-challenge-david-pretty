@@ -10,6 +10,7 @@ from decimal import Decimal, InvalidOperation, localcontext
 from pydantic import BaseModel
 
 from archive.common.text.date_parsing_constants import (
+    AMBIGUOUS_DAY_MONTH_LIMIT,
     DAY_FIRST_DATE_RE,
     DAY_MONTH_NAME_RE,
     ISO_DATE_RE,
@@ -37,7 +38,6 @@ from archive.validation.validation_constants import (
     ISSUE_TOO_LONG,
     MAX_ANSWER_CHARS,
     MAX_DECIMAL_DIGITS,
-    MAX_UNAMBIGUOUS_MONTH,
     MIN_CONFLICT_CITATIONS,
     NOT_FOUND_ANSWER,
     PDF_SUFFIX,
@@ -67,7 +67,7 @@ def normalize_date(text: str) -> str | None:
         year, month, day = match.groups()
     elif match := DAY_FIRST_DATE_RE.fullmatch(plain):
         day, month, year = match.groups()
-        if int(day) <= MAX_UNAMBIGUOUS_MONTH:
+        if int(day) <= AMBIGUOUS_DAY_MONTH_LIMIT:
             return None
     elif match := DAY_MONTH_NAME_RE.fullmatch(plain):
         day, name, year = match.groups()

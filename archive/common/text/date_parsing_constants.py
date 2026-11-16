@@ -33,6 +33,8 @@ MONTH_ABBREVIATIONS: dict[str, int] = {
 MONTHS: dict[str, int] = {**MONTH_FULL_NAMES, **MONTH_ABBREVIATIONS}
 _MONTH_NAMES = "|".join(sorted(MONTHS, key=len, reverse=True))
 
+# Compiled patterns: strict `fullmatch` validation of a whole answer
+# (validation package).
 ISO_DATE_RE = re.compile(r"(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})")
 DAY_FIRST_DATE_RE = re.compile(r"(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})")
 DAY_MONTH_NAME_RE = re.compile(
@@ -43,6 +45,8 @@ MONTH_NAME_DAY_RE = re.compile(
     rf"({_MONTH_NAMES})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?,?\s+(\d{{4}})"
 )
 
+# Pattern strings: tolerant `finditer` scanning of document text
+# (ingest package).
 DATE_ISO_PATTERN = r"(?<![\d-])(?P<y>\d{4})-(?P<m>\d{2})-(?P<d>\d{2})(?!\d)"
 DATE_NUMERIC_PATTERN = (
     r"(?<![\d/.])(?P<d>\d{1,2})[/.](?P<m>\d{1,2})[/.]"
@@ -64,3 +68,6 @@ SHORT_YEAR_CENTURY = 2000
 SHORT_YEAR_DIGITS = 2
 MONTH_FUZZY_MIN_LENGTH = 4
 MONTH_FUZZY_CUTOFF = 0.8
+# A day of 12 or less could be the month, so DD/MM and MM/DD are
+# ambiguous and such a date is left as written.
+AMBIGUOUS_DAY_MONTH_LIMIT = 12

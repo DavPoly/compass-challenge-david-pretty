@@ -144,7 +144,7 @@ class QdrantGateway:
                 with_payload=True,
             )
             chunks.extend(Chunk.model_validate(p.payload) for p in points)
-            if offset is None:
+            if not points or offset is None:
                 break
         return chunks
 

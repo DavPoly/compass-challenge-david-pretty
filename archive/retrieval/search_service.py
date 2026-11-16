@@ -4,6 +4,7 @@
 `hybrid_search` and `list_by_filter`.
 """
 
+import logging
 import threading
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -13,16 +14,21 @@ from qdrant_client import models
 
 from archive.common.chunk_model import Chunk
 from archive.ingest.index_builder_service import load_manifest
-from archive.ingest.metadata_service import extract_metadata
-from archive.ingest.pdf_parse_gateway import ParsedDoc
+from archive.ingest.metadata_service import extract_identifiers
 from archive.retrieval.qdrant_constants import (
     FIELD_DOC_DATE,
     FIELD_DOC_TYPE,
     FIELD_IDENTIFIERS,
 )
 from archive.retrieval.qdrant_gateway import QdrantGateway
-from archive.retrieval.search_constants import QUERY_DOC_ID, UNRANKED_SCORE
+from archive.retrieval.search_constants import (
+    LOG_CLOSE_TIMEOUT,
+    QUERY_DRAIN_TIMEOUT_S,
+    UNRANKED_SCORE,
+)
 from archive.retrieval.sparse_encoding_utils import sparse_vector
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -84,8 +90,7 @@ def _match_any(key: str, values: list[str]) -> models.FieldCondition:
 
 def find_identifiers(text: str) -> list[str]:
     """Canonical identifiers (codes, emails) mentioned in `text`."""
-    doc = ParsedDoc(doc_id=QUERY_DOC_ID, pages=[text])
-    return extract_metadata(doc).identifiers
+    return extract_identifiers(text)
 
 
 class SearchService:
@@ -148,7 +153,20 @@ class SearchService:
         return [SearchHit(chunk, UNRANKED_SCORE) for chunk in chunks]
 
     def close(self) -> None:
-        """Release the index."""
+        """Release the index, after a bounded drain of in-flight reads.
+
+        A worker may still be inside a query when the run gives up on
+        it: the gateway is closed under `_read_lock` so a query cannot
+        start mid-close, but the wait is bounded — teardown logs and
+        closes anyway rather than hanging the run.
+        """
+        if self._read_lock.acquire(timeout=QUERY_DRAIN_TIMEOUT_S):
+            try:
+                self._gateway.close()
+            finally:
+                self._read_lock.release()
+            return
+        logger.warning(LOG_CLOSE_TIMEOUT, QUERY_DRAIN_TIMEOUT_S)
         self._gateway.close()
 
     def __enter__(self) -> "SearchService":

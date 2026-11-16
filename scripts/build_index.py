@@ -15,12 +15,15 @@ from archive.common.constants import (  # noqa: E402
     REPO_ROOT,
 )
 from archive.ingest.index_builder_service import build  # noqa: E402
+from archive.pipeline.pipeline_constants import (  # noqa: E402
+    EXIT_ERROR,
+    EXIT_OK,
+)
 from archive.retrieval.qdrant_constants import QDRANT_SUBDIR  # noqa: E402
 
 logger = logging.getLogger("build_index")
 SQLITE_NAME = "storage.sqlite"
 BYTES_PER_MB = 1024 * 1024
-EXIT_FAILURE = 1
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -44,7 +47,7 @@ def main(argv: list[str] | None = None) -> int:
             "No PDFs found in %s. Pass --corpus with the PDF directory.",
             args.corpus,
         )
-        return EXIT_FAILURE
+        return EXIT_ERROR
     report = build(args.corpus, args.index, args.workers)
     sizes = [
         path.stat().st_size
@@ -58,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
         report.seconds,
         sum(sizes) / BYTES_PER_MB,
     )
-    return 0
+    return EXIT_OK
 
 
 if __name__ == "__main__":

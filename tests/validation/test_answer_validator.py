@@ -7,8 +7,11 @@ from archive.validation.answer_validator import (
     validate,
 )
 from archive.validation.issue_model import IssueCode
+from archive.validation.validation_constants import INVISIBLE_SPACE_RE
 
 KNOWN = {"doc_0001", "doc_0002", "doc_0003"}
+INVISIBLE_SPACE_CHARS = " \u00a0\u202f'"
+NON_INVISIBLE_CHARS = "a1$,\t.\u2009\u2003"
 
 
 def _draft(
@@ -42,6 +45,16 @@ def _draft(
 )
 def test_normalize_date(raw: str, expected: str | None) -> None:
     assert normalize_date(raw) == expected
+
+
+def test_invisible_space_re_matches_exactly_four_characters() -> None:
+    assert INVISIBLE_SPACE_RE.pattern == r"[\u00a0\u202f ']"
+    assert all(
+        INVISIBLE_SPACE_RE.fullmatch(char) for char in INVISIBLE_SPACE_CHARS
+    )
+    assert not any(
+        INVISIBLE_SPACE_RE.fullmatch(char) for char in NON_INVISIBLE_CHARS
+    )
 
 
 @pytest.mark.parametrize(

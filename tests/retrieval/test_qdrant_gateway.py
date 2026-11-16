@@ -16,6 +16,9 @@ from archive.retrieval.sparse_encoding_utils import (
     tokenize,
 )
 
+CAP = 10
+MAX_SCROLL_CALLS = 3
+
 
 def make_chunk(chunk_id: str, text: str, doc_type: str = "invoice") -> Chunk:
     return Chunk(
@@ -130,6 +133,26 @@ def test_open_existing_without_collection_raises(tmp_path: Path) -> None:
     with pytest.raises(IndexOpenError, match="archive_chunks"):
         QdrantGateway.open_existing(tmp_path)
     QdrantGateway.open(tmp_path).close()
+
+
+class EmptyPageClient:
+    """Scroll always answers an empty page with a non-None offset."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def scroll(self, *_args: object, **_kwargs: object) -> tuple[list, str]:
+        self.calls += 1
+        assert self.calls <= MAX_SCROLL_CALLS, "scroll did not terminate"
+        return [], "next-page"
+
+
+def test_scroll_stops_on_an_empty_page_with_an_offset() -> None:
+    client = EmptyPageClient()
+    gateway = QdrantGateway(client)  # type: ignore[arg-type]
+
+    assert gateway.scroll(None, CAP) == []
+    assert client.calls == 1
 
 
 def test_to_point_uses_shared_sparse_encoding() -> None:

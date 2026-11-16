@@ -1,5 +1,7 @@
 """Constants of the ingest package: chunking, metadata and index build."""
 
+import re
+
 from archive.common.constants import STOPWORDS_EN, STOPWORDS_FR
 
 CHUNK_SINGLE_MAX_TOKENS = 800
@@ -20,7 +22,8 @@ LANG_HINTS_EN = STOPWORDS_EN - STOPWORDS_FR
 
 # Identifiers, tolerant of OCR-like typos: any dash, a space or nothing
 # as separator, "O" for "0". Group "prefix" selects the canonical form.
-ID_SEPARATOR_PATTERN = r"[-\u2010-\u2015\u2212\s]?"
+IDENTIFIER_DASH_CHARS = "-\u2010\u2011\u2012\u2013\u2014\u2015\u2212"
+ID_SEPARATOR_PATTERN = rf"[{re.escape(IDENTIFIER_DASH_CHARS)}\s]?"
 IDENTIFIER_PATTERN = (
     r"(?<![A-Za-z0-9])(?P<prefix>(?i:BRV|F|C))"
     rf"(?P<sep>{ID_SEPARATOR_PATTERN})"
@@ -28,7 +31,6 @@ IDENTIFIER_PATTERN = (
     rf"{ID_SEPARATOR_PATTERN}"
     r"(?P<serial>[0-9O]{2,4})(?![0-9])"
 )
-IDENTIFIER_DASH_CHARS = "-\u2010\u2011\u2012\u2013\u2014\u2015\u2212"
 IDENTIFIER_SERIAL_DIGITS = {"F": 4, "C": 2, "BRV": 2}
 EMAIL_PATTERN = r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+"
 
