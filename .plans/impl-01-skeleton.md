@@ -191,3 +191,27 @@ so tests needing PDFs read from the kit's
   duplicate question ids keep the first occurrence.
 - 2026-11-16: V is blocked on the user's `LLM_*` variables, so the
   pre-commit review runs before V instead of after.
+
+## Resume point (2026-11-16, session stopped near context limit)
+
+T0–T5 merged on `feat/skeleton`; 180 tests, ruff and mypy pass. Review
+done (reviewer + quality). Fix round 1 was interrupted: the four
+worktrees `.claude/temp_worktree/{run-exit,llm-repair,validation-formats,
+index-integrity}` (branches `fix/<slug>`, cut from b8225d4) hold
+UNCOMMITTED, unverified partial edits. Next session: inspect each diff,
+then relaunch an implement subagent per worktree to finish, test and
+commit, then merge `--no-ff`. Scope per slice:
+- run-exit: `os._exit` after flushing in `answer.py`; deadline from
+  `run()` entry; known ids ∩ `corpus/` stems; case-insensitive
+  `<document`/`</document` escaping; raw-string fix in prompt_constants.
+- llm-repair: no empty assistant turn in repair; 408/409 retryable;
+  status-specific fatal hints; literals to constants; simpler control flow.
+- validation-formats: `coerce_numbers_to_str`; bare-string citations;
+  slash dates converted only when day > 12; `0.125 $` amount bug; typed
+  `IssueCode`/`ValidationIssue`.
+- index-integrity: `IndexOpenError` when the collection is missing; no
+  `ignore_errors` rmtree; manifest deleted before rebuild; sparse encoding
+  moved to `retrieval/sparse_encoding_utils.py` (byte-identical tokens).
+Round 2 (after): unify month tables/date parsing and accent stripping,
+move text normalize utils to `common/`, split `common/constants.py`.
+V still pending: needs the user's `LLM_*` variables.
