@@ -1,2 +1,5 @@
-# Une dépendance par ligne, avec une version épinglée. Exemple :
-# requests==2.32.3
+# Une dépendance par ligne, avec une version épinglée.
+openai==3.51.0
+pdfplumber==0.11.10
+pydantic==2.14.3
+qdrant-client==1.20.0
