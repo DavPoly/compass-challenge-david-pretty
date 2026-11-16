@@ -207,15 +207,36 @@ so tests needing PDFs read from the kit's
   all over the 200-line soft commit budget with no clean split; merged
   --no-ff as 595ac80/92eb544/6975a53/44a89b7, all checks green
   (223 tests) on feat/skeleton.
+- 2026-11-16 (round 2): text normalize utils moved to
+  `archive/common/text` (fixes the retrieval→ingest sideways import);
+  `strip_accents` canonical there, validation's private duplicate
+  deleted; month/date tables unified in
+  `common/text/date_parsing_{constants,utils}`. Ingest stays
+  abbreviation-blind via `fuzzy_month_number(token,
+  MONTH_FULL_NAMES)` — routing ingest through merged MONTHS would have
+  dated "12 jan 2024", so the table is an argument, not a global.
+- 2026-11-16 (round 2): score.py stays frozen: it is the organizer's
+  eval harness and importing archive.* would couple scoring to the
+  solution; its MONTHS/strip_accents/date-regex duplicates are
+  accepted (known, contained, untested).
+- 2026-11-16 (round 2): the merged table changes _MONTH_NAMES
+  alternation tie order (dict insertion order); length-desc sort keeps
+  prefix behaviour, equivalence sweep over table × samples: 0 diffs.
+- 2026-11-16 (round 2): all date pattern constants stayed together in
+  `common/text/date_parsing_constants.py` (one date-domain home);
+  `ingest_constants.py` carries no date patterns;
+  `common/constants.py` slimmed to shared config/stopword/glob values.
+- 2026-11-16 (round 2): refactor commits 30/65/349/113 lines (the 349
+  lands tables + consumers + pin tests together), merge diff 529
+  lines — under the 700 merge budget; checks green, 232 tests.
 
-## Resume point (2026-11-16, fix round 1 complete)
+## Resume point (2026-11-16, round 2 complete)
 
-T0–T5 and fix round 1 merged on `feat/skeleton` (tip 44a89b7; 223
-tests, ruff + format + mypy --strict green). Fix round 1 slices:
-run-exit (e238715), llm-repair (3d08ba2), validation-formats (edfea51),
-index-integrity (2b4aee1); worktrees and branches removed, nothing
+Fix round 1 and round 2 merged on `feat/skeleton` (tip 3cf56be; 232
+tests, ruff + format + mypy --strict green). Round 2 refactor branch
+`refactor/unify-normalization` merged as 3cf56be (commits 36b837e,
+d3e9ad2, 1e49d7a, f2205ce); worktree and branch removed, nothing
 pushed. Next:
-- Round 2: unify month tables/date parsing and accent stripping,
-  move text normalize utils to `common/`, split `common/constants.py`.
-- Pre-commit review on BASE bb65fa4..HEAD (fix rounds capped at ~2).
+- Pre-commit review on BASE bb65fa4..HEAD (reviewer + quality;
+  fix rounds capped at ~2).
 - V still pending: needs the user's `LLM_*` variables.
