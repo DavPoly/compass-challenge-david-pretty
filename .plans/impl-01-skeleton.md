@@ -4,7 +4,7 @@
 **Parent:** [impl-00-roadmap.md](impl-00-roadmap.md), [global-architecture.md](global-architecture.md)
 **Orchestrator branch `B`:** `feat/skeleton` (cut from `main`)
 **BASE:** `bb65fa4c4855a1b2328605f3b6ceec1510f1b457`
-**Subagent branches:** `chore/tracer` (T0, merged), `feat/ingest-text` (T1, merged), `feat/llm-gateway` (T2, merged), `feat/validation` (T3, merged), `feat/retrieval-index` (T4)
+**Subagent branches:** `chore/tracer` (T0, merged), `feat/ingest-text` (T1, merged), `feat/llm-gateway` (T2, merged), `feat/validation` (T3, merged), `feat/retrieval-index` (T4, merged), `feat/agent-runner` (T5)
 
 ## Goal
 
@@ -177,3 +177,9 @@ so tests needing PDFs read from the kit's
   cited id zeroes that question's citation score; over-citing is
   penalised by `(len(gold)+1)/len(cited)`; money tolerance 0.5%; gold
   `not_found` answer is `""`.
+- 2026-11-16 (T4): full build 83 s on 22 cores, 3,048 docs, 3,048 chunks
+  (all single-chunk), 0 failures, `storage.sqlite` 14.2 MB. Date filters
+  use Qdrant `DatetimeRange` on the ISO string. Reads are serialised by a
+  lock. Retrieval baseline on the 17 samples with gold citations: mean
+  gold-doc recall@8 = 0.67, ≥1 gold doc in top 8 for 15/17; s01 and s12
+  (policy/superseded, no code) miss entirely; s20 = 0.06 (aggregation).
