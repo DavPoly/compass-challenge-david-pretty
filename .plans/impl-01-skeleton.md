@@ -4,7 +4,7 @@
 **Parent:** [impl-00-roadmap.md](impl-00-roadmap.md), [global-architecture.md](global-architecture.md)
 **Orchestrator branch `B`:** `feat/skeleton` (cut from `main`)
 **BASE:** `bb65fa4c4855a1b2328605f3b6ceec1510f1b457`
-**Subagent branches:** `chore/tracer` (T0, merged), `feat/ingest-text` (T1, merged), `feat/llm-gateway` (T2, merged), `feat/validation` (T3, merged), `feat/retrieval-index` (T4, merged), `feat/agent-runner` (T5, merged)
+**Subagent branches:** `chore/tracer` (T0, merged), `feat/ingest-text` (T1, merged), `feat/llm-gateway` (T2, merged), `feat/validation` (T3, merged), `feat/retrieval-index` (T4, merged), `feat/agent-runner` (T5, merged); review fix round 1: `fix/run-exit`, `fix/llm-repair`, `fix/validation-formats`, `fix/index-integrity`
 
 ## Goal
 
