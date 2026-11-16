@@ -18,6 +18,7 @@ from archive.llm.llm_gateway import (
     LlmGateway,
     LlmResponseError,
     LlmUnavailableError,
+    extract_json_object,
     parse_retry_after,
 )
 
@@ -199,6 +200,20 @@ def test_fenced_json_with_prose_is_extracted() -> None:
     assert len(client.calls) == 1
 
 
+def test_object_extraction_handles_escaped_quote() -> None:
+    text = '{"text": "a \\" } b", "score": 1}'
+
+    assert extract_json_object(text) == text
+
+
+def test_unterminated_object_returns_remainder() -> None:
+    assert extract_json_object('prefix {"text": "hi"') == '{"text": "hi"'
+
+
+def test_text_without_object_is_stripped() -> None:
+    assert extract_json_object("  not json  ") == "not json"
+
+
 def test_rejected_response_format_falls_back_and_sticks() -> None:
     rejection = make_status_error(
         openai.BadRequestError,
@@ -239,3 +254,63 @@ def test_parse_retry_after(value: str | None, expected: float | None) -> None:
 
 def test_parse_retry_after_http_date_in_past() -> None:
     assert parse_retry_after("Wed, 21 Oct 2015 07:28:00 GMT") == 0.0
+
+
+@pytest.mark.parametrize("blank", [None, "", "  \n"])
+def test_repair_omits_blank_assistant_turn(blank: str | None) -> None:
+    gateway, client, _ = make_gateway([reply(blank), reply(GOOD)])
+
+    gateway.complete_json(MESSAGES, Answer)
+
+    sent = client.calls[1]["messages"]
+    assert all(turn["content"].strip() for turn in sent)
+    assert [turn["role"] for turn in sent] == ["user", "user"]
+
+
+@pytest.mark.parametrize("status", [408, 409, 429])
+def test_retryable_client_statuses_are_retried(status: int) -> None:
+    error = make_status_error(openai.APIStatusError, status)
+    gateway, client, sleeps = make_gateway([error, reply(GOOD)])
+
+    result = gateway.complete_json(MESSAGES, Answer)
+
+    assert result == Answer(text="hi", score=3)
+    assert len(client.calls) == 2
+    assert len(sleeps) == 1
+
+
+@pytest.mark.parametrize(
+    ("cls", "status", "expected", "absent"),
+    [
+        (
+            openai.AuthenticationError,
+            401,
+            "matches LLM_BASE_URL",
+            "LLM_MODEL",
+        ),
+        (openai.PermissionDeniedError, 403, "LLM_API_KEY", "LLM_MODEL"),
+        (
+            openai.NotFoundError,
+            404,
+            "LLM_MODEL and LLM_BASE_URL",
+            "LLM_API_KEY",
+        ),
+        (openai.UnprocessableEntityError, 422, "rejected", "LLM_API_KEY"),
+    ],
+)
+def test_fatal_hint_matches_status(
+    cls: type[openai.APIStatusError],
+    status: int,
+    expected: str,
+    absent: str,
+) -> None:
+    gateway, client, _ = make_gateway([make_status_error(cls, status)])
+
+    with pytest.raises(LlmUnavailableError) as raised:
+        gateway.complete_json(MESSAGES, Answer)
+
+    message = str(raised.value)
+    assert f"HTTP {status}" in message
+    assert expected in message
+    assert absent not in message
+    assert len(client.calls) == 1
