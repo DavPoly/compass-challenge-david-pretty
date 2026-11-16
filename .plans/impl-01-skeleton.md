@@ -1,0 +1,160 @@
+# Step 01: walking skeleton
+
+**Status:** approved
+**Parent:** [impl-00-roadmap.md](impl-00-roadmap.md), [global-architecture.md](global-architecture.md)
+**Orchestrator branch `B`:** `feat/skeleton` (cut from `docs/architecture`)
+**BASE:** _(record `git rev-parse B` here before T0; never overwrite)_
+**Subagent branches:** _(record each `<type>/<slug>` here when created)_
+
+## Goal
+
+A thin end-to-end path through every module that scores above zero:
+parse, chunk, BM25-only index, one `draft` LLM call, schema + format
+validation, `answers.jsonl`. Later steps upgrade each layer behind the
+interfaces frozen here.
+
+## Acceptance criteria
+
+- `python answer.py <kit>/samples/questions.jsonl answers.jsonl` runs end
+  to end on the committed index. Each line has exactly `id`, `answer`,
+  `citations`, `status`, and every cited id exists in `corpus/`.
+- A missing `LLM_*` variable, questions file or `corpus/` makes the program
+  exit 1 with a message that names the problem and the fix.
+- The run on the 20 samples, scaled to 60 questions, takes under 10 min.
+- `ruff check`, `ruff format --check`, `mypy --strict archive scripts` and
+  `pytest` pass.
+- `score.py --details` baseline is recorded in the decisions log.
+
+## Out of scope (later steps)
+
+Tables and number/date normalization (02), dense vectors and reranking (03),
+router and recipes (04), ReAct (05), grounding and the conflict rule (06),
+traces (07), report (08).
+
+## Design
+
+### Frozen interfaces
+
+See the table in [impl-00-roadmap.md](impl-00-roadmap.md). Step-01 details:
+
+- `AppConfig` (`archive/common/config.py`): `llm_base_url`, `llm_api_key`,
+  `llm_model`, `corpus_dir`, `index_dir`; `from_env()` raises `ConfigError`.
+- `Chunk` (`archive/common/chunk_model.py`): pydantic model, fields per the
+  roadmap. Version fields stay `None` in step 01.
+- `parse_pdf(path) -> ParsedDoc` (`archive/ingest/pdf_parse_gateway.py`):
+  `doc_id`, `pages: list[str]` (pdfplumber text only).
+- `normalize_text(text) -> str` (`text_normalize_utils.py`): NFKC,
+  NBSP/thin spaces to spaces, whitespace collapse. Accent folding happens
+  only in `normalize_for_match(text) -> str`, used for tokens.
+- `chunk_document(doc, metadata) -> list[Chunk]` (`chunking_service.py`):
+  one chunk below ~800 tokens; above that ~400-token chunks with 50 overlap.
+- `extract_metadata(doc) -> DocMetadata` (`metadata_service.py`): regex
+  identifiers (`F-YYYY-NNNN`, `C-YYYY-NN`, `BRV-YYYY-NN`, emails, tolerant
+  of OCR-like typos), first date found as `doc_date`, `lang` by stopword
+  count, `doc_type="unknown"` until step 02.
+- `sparse_vector(text) -> SparseVector` (`archive/retrieval/qdrant_gateway.py`):
+  in-house tokenizer (`normalize_for_match`, split, FR+EN stopwords from
+  constants), stable hash to indices, term-frequency values; Qdrant applies
+  `Modifier.IDF`.
+- `QdrantGateway`: `open(index_dir)`, `ensure_collection()`,
+  `upsert(chunks)`, `query_sparse(vector, filter, k)`,
+  `scroll(filter, cap)`; one shared client with a write lock.
+- `search_service`: `hybrid_search` (sparse only here; identifiers found in
+  the question become a payload filter, with a retry without the filter if
+  it returns nothing) and `list_by_filter`.
+- `index_builder_service.build(corpus_dir, index_dir)`: parse, chunk,
+  upsert, write `index/manifest.json` (`doc_id → size, sha1`).
+- `LlmGateway(config).complete_json(messages, schema)`: `openai` SDK,
+  `response_format` json_schema, JSON-in-text fallback, one repair
+  re-prompt; retries timeouts/429/5xx with exponential backoff and jitter,
+  honoring `Retry-After`.
+- `input_model.load_questions(path) -> list[Question]`: a bad line becomes
+  a `Question` flagged invalid, with a warning, and later a `not_found`
+  answer.
+- `answer_validator.validate(draft, retrieved_doc_ids, known_doc_ids) ->
+  ValidationResult`: schema, citations ⊆ retrieved ∩ known (others dropped),
+  ISO dates, decimal amounts, answer < 200 chars, list for multi-item.
+  It never turns an answer into an abstention.
+- `draft_service.draft(question, hits, llm) -> DraftAnswer`: top ~8 chunks
+  wrapped in untrusted-data delimiters, prompt from `prompt_constants.py`.
+- `run_service.run(...)`: loads questions, thread pool, 60 s per question,
+  17 min global deadline. Writes each answer line as soon as it is ready.
+  On timeout or `LlmUnavailableError` it writes `not_found` with no
+  citations.
+
+### Data flow
+
+`answer.py` → `AppConfig.from_env()` → `run_service.run` → per question:
+`hybrid_search` → `draft` → `validate` → `FinalAnswer` → `answers.jsonl`.
+Offline: `scripts/build_index.py` → `index_builder_service.build` →
+`index/qdrant/` + `index/manifest.json` (committed).
+
+### Files
+
+```
+pyproject.toml, requirements.txt, requirements-dev.txt, .gitignore, answer.py
+archive/common/      config.py, constants.py, chunk_model.py
+archive/ingest/      pdf_parse_gateway.py, text_normalize_utils.py,
+                     chunking_service.py, metadata_service.py,
+                     index_builder_service.py
+archive/retrieval/   qdrant_gateway.py, search_service.py
+archive/llm/         llm_gateway.py
+archive/validation/  input_model.py, answer_model.py, answer_validator.py
+archive/agent/       draft_service.py, prompt_constants.py
+archive/pipeline/    run_service.py
+scripts/             build_index.py
+tests/               mirrored tree (tests/<pkg>/test_<module>.py)
+index/               qdrant/, manifest.json
+```
+
+Each package keeps its constants in its own `*_constants.py` when it needs
+any (code-quality §4). Shared constants go in `archive/common/constants.py`.
+
+## Tasks
+
+| Task | What | Owns | Parallel | Depends on | Done when |
+|---|---|---|---|---|---|
+| T0 tracer | Tooling (ruff, mypy strict, pytest in `pyproject.toml`), pinned `requirements*.txt`, `.gitignore` (`.lock`, `traces/`, `corpus/`), `archive/common/*`, minimal `pdf_parse_gateway`, `qdrant_gateway` (sparse only). Spike: index 30 docs, query one known code. Commits the starter files first (`chore: import starter kit`). | `pyproject.toml`, `requirements*.txt`, `.gitignore`, `archive/common/*`, `archive/ingest/pdf_parse_gateway.py`, `archive/retrieval/qdrant_gateway.py`, their tests | no | none | a test queries a code and gets the right doc; all checks pass |
+| T1 ingest | normalize, chunking, metadata | `archive/ingest/{text_normalize_utils,chunking_service,metadata_service}.py` + tests | yes (A) | T0 | unit tests cover edge cases: empty doc, typo'd codes, FR/EN text, chunk boundaries |
+| T2 llm | `LlmGateway` | `archive/llm/*` + tests | yes (A) | T0 | mocked tests cover 429 + `Retry-After`, timeout, 5xx, bad JSON then repair, repair failure |
+| T3 validation | input + answer models, validator | `archive/validation/*` + tests | yes (A) | T0 | tests cover bad question line, unknown or unretrieved citation, format rules, no forced abstention |
+| T4 retrieval + index | `search_service`, `index_builder_service`, `scripts/build_index.py`, full build committed in `index/` | those files, `index/**`, tests | no (B) | A | full corpus indexed; `storage.sqlite` < 100 MB; codes from 5 sample questions hit their gold doc in the top 8 |
+| T5 agent + runner | `draft_service`, `prompt_constants`, `run_service`, `answer.py` | those files + tests | no (C) | B | mocked-LLM end-to-end test writes valid lines; exit-1 paths tested |
+| V verify | Run on `B` (no edits): sample command with real LLM, `score.py --details`, wall time | none | — | C | baseline score and time recorded below |
+
+Batches: **T0** → **A = {T1, T2, T3}** (one Agent call) → **B = {T4}** →
+**C = {T5}** → **V**. Each task stays under 700 merged lines; T4 excludes
+the binary index from that count.
+
+## Execution
+
+Every task is implemented by an `implement` subagent via the plan-workflow
+§6.1 worktree flow (`.claude/temp_worktree/<slug>` on `<type>/<slug>`, cut
+from `B`, merged back `--no-ff`). Each batch is launched in one Agent call.
+The main agent does not implement tasks inline; it only orchestrates,
+merges and updates this file. After V, the `pre-commit-review` skill runs
+the `reviewer` and `quality` subagents on `BASE..HEAD`. Fix rounds go
+through `implement` subagents with new slugs, capped at about two cycles.
+
+Environment: the orchestrator creates the main-checkout venv once, before
+T0, with Python 3.11 (`py -3.11 -m venv .venv`). Subagent check commands use
+the absolute path to that venv's python. The fresh worktree has no `corpus/`,
+so tests needing PDFs read from the kit's
+`c:/Users/david/Dev/compass-challenge-kit/corpus`, passed in as a path.
+
+## Verification
+
+- Per task: the "done when" tests, plus `ruff check`,
+  `ruff format --check`, `mypy --strict archive scripts` and `pytest` in the
+  worktree.
+- Whole step: V on `B` with the real LLM (OpenRouter, env vars set by the
+  user). Then the four robustness checks: a missing env var, a missing
+  questions file, a missing `corpus/`, and a malformed questions line.
+
+## Decisions log
+
+- 2026-11-16: the sparse vectors come from an in-house tokenizer with
+  Qdrant `Modifier.IDF`, not fastembed BM25. Reason: no model download, no
+  onnxruntime in step 01, and the stopword config stays committed (the global
+  plan's intent). Step 03 adds fastembed for dense vectors only.
+- 2026-11-16: Python 3.11 dev venv (eval minimum; avoids missing 3.14 wheels).
