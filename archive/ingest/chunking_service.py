@@ -3,7 +3,8 @@
 import re
 
 from archive.common.chunk_model import Chunk, ChunkKind
-from archive.common.constants import (
+from archive.common.text.text_normalize_utils import join_pages
+from archive.ingest.ingest_constants import (
     CHUNK_ID_SEPARATOR,
     CHUNK_OVERLAP_TOKENS,
     CHUNK_PARAGRAPH_SNAP_TOKENS,
@@ -14,7 +15,6 @@ from archive.common.constants import (
 )
 from archive.ingest.metadata_service import DocMetadata
 from archive.ingest.pdf_parse_gateway import ParsedDoc
-from archive.ingest.text_normalize_utils import join_pages
 
 _WORD = re.compile(WORD_PATTERN)
 

@@ -1,7 +1,6 @@
 """Constantes partagées par plusieurs modules."""
 
 from pathlib import Path
-from typing import Final
 
 ENV_LLM_BASE_URL = "LLM_BASE_URL"
 ENV_LLM_API_KEY = "LLM_API_KEY"
@@ -36,79 +35,5 @@ STOPWORDS_EN = frozenset(
 
 STOPWORDS = STOPWORDS_FR | STOPWORDS_EN
 
-# --- Ingestion: text normalization, chunking, metadata -----------------
-
-UNICODE_COMPAT_FORM: Final = "NFKC"
-UNICODE_DECOMPOSED_FORM: Final = "NFKD"
-HORIZONTAL_SPACE_PATTERN = r"[ \t\f\v]+"
-BLANK_LINES_PATTERN = r"\n{3,}"
-PAGE_SEPARATOR = "\n\n"
-
-# Tokens are approximated by whitespace-separated words.
-CHUNK_SINGLE_MAX_TOKENS = 800
-CHUNK_TARGET_TOKENS = 400
-CHUNK_OVERLAP_TOKENS = 50
-CHUNK_PARAGRAPH_SNAP_TOKENS = 60
-CHUNK_ID_SEPARATOR = "#"
-PARAGRAPH_BREAK = "\n\n"
-WORD_PATTERN = r"\S+"
-
-DOC_TYPE_UNKNOWN = "unknown"
-LANG_FR = "fr"
-LANG_EN = "en"
-LANG_WORD_PATTERN = r"[a-z]+"
-LANG_HINTS_FR = STOPWORDS_FR - STOPWORDS_EN
-LANG_HINTS_EN = STOPWORDS_EN - STOPWORDS_FR
-
-# Identifiers, tolerant of OCR-like typos: any dash, a space or nothing
-# as separator, "O" for "0". Group "prefix" selects the canonical form.
-ID_SEPARATOR_PATTERN = r"[-\u2010-\u2015\u2212\s]?"
-IDENTIFIER_PATTERN = (
-    r"(?<![A-Za-z0-9])(?P<prefix>(?i:BRV|F|C))"
-    rf"(?P<sep>{ID_SEPARATOR_PATTERN})"
-    r"(?P<year>[12][09O][0-9O]{2})"
-    rf"{ID_SEPARATOR_PATTERN}"
-    r"(?P<serial>[0-9O]{2,4})(?![0-9])"
-)
-IDENTIFIER_DASH_CHARS = "-\u2010\u2011\u2012\u2013\u2014\u2015\u2212"
-IDENTIFIER_SERIAL_DIGITS = {"F": 4, "C": 2, "BRV": 2}
-EMAIL_PATTERN = r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+"
-
-# Dates.
-DATE_ISO_PATTERN = r"(?<![\d-])(?P<y>\d{4})-(?P<m>\d{2})-(?P<d>\d{2})(?!\d)"
-DATE_NUMERIC_PATTERN = (
-    r"(?<![\d/.])(?P<d>\d{1,2})[/.](?P<m>\d{1,2})[/.]"
-    r"(?P<y>\d{4})(?![\d/.])"
-)
-DATE_SHORT_YEAR_PATTERN = (
-    r"(?<![\d/.])(?P<d>\d{2})/(?P<m>\d{2})/(?P<y>\d{2})(?![\d/.])"
-)
-DATE_DAY_MONTH_WORD_PATTERN = (
-    r"(?<!\d)(?P<d>\d{1,2})(?:er|st|nd|rd|th)?\s+"
-    r"(?P<m>[^\W\d_]{3,12})\.?,?\s+(?P<y>\d{4})(?!\d)"
-)
-DATE_MONTH_WORD_DAY_PATTERN = (
-    r"(?<![^\W\d_])(?P<m>[^\W\d_]{3,12})\.?\s+(?P<d>\d{1,2})"
-    r"(?:st|nd|rd|th)?,?\s+(?P<y>\d{4})(?!\d)"
-)
-SHORT_YEAR_CENTURY = 2000
-SHORT_YEAR_DIGITS = 2
-MONTH_FUZZY_MIN_LENGTH = 4
-MONTH_FUZZY_CUTOFF = 0.8
-MONTH_NUMBERS = {
-    "janvier": 1, "fevrier": 2, "mars": 3, "avril": 4, "mai": 5,
-    "juin": 6, "juillet": 7, "aout": 8, "septembre": 9,
-    "octobre": 10, "novembre": 11, "decembre": 12,
-    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5,
-    "june": 6, "july": 7, "august": 8, "september": 9,
-    "october": 10, "november": 11, "december": 12,
-}  # fmt: skip
-
-# --- Index building ------------------------------------------------------
-
+# Corpus and pipeline share this glob.
 PDF_GLOB = "*.pdf"
-MANIFEST_FILE_NAME = "manifest.json"
-MANIFEST_INDENT = 1
-BUILD_FLUSH_CHUNKS = 512
-BUILD_MAP_CHUNKSIZE = 8
-FILE_HASH_BLOCK_BYTES = 1 << 20

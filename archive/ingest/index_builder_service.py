@@ -12,15 +12,15 @@ from pathlib import Path
 from typing import TypedDict
 
 from archive.common.chunk_model import Chunk
-from archive.common.constants import (
+from archive.common.constants import PDF_GLOB
+from archive.ingest.chunking_service import chunk_document
+from archive.ingest.ingest_constants import (
     BUILD_FLUSH_CHUNKS,
     BUILD_MAP_CHUNKSIZE,
     FILE_HASH_BLOCK_BYTES,
     MANIFEST_FILE_NAME,
     MANIFEST_INDENT,
-    PDF_GLOB,
 )
-from archive.ingest.chunking_service import chunk_document
 from archive.ingest.metadata_service import extract_metadata
 from archive.ingest.pdf_parse_gateway import PdfParseError, parse_pdf
 from archive.retrieval.qdrant_constants import QDRANT_SUBDIR

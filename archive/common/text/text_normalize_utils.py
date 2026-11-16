@@ -3,7 +3,7 @@
 import re
 import unicodedata
 
-from archive.common.constants import (
+from archive.common.text.text_normalize_constants import (
     BLANK_LINES_PATTERN,
     HORIZONTAL_SPACE_PATTERN,
     PAGE_SEPARATOR,
@@ -36,10 +36,30 @@ def normalize_text(text: str) -> str:
     return _BLANK_LINES.sub(PAGE_SEPARATOR, "\n".join(lines)).strip()
 
 
+def strip_accents(text: str) -> str:
+    """Remove diacritics from text, keeping every other character.
+
+    The text is decomposed (NFKD) and the combining marks are dropped, so
+    precomposed (``é``) and decomposed (``e`` + U+0301) accents fold the
+    same way. Case is left untouched.
+
+    Args:
+        text: Any text.
+
+    Returns:
+        The text without diacritics.
+    """
+    decomposed = unicodedata.normalize(UNICODE_DECOMPOSED_FORM, text)
+    return "".join(
+        char for char in decomposed if not unicodedata.combining(char)
+    )
+
+
 def normalize_for_match(text: str) -> str:
     """Normalize text for token and identifier matching.
 
-    Same as `normalize_text`, then lowercased with accents removed.
+    Same as `normalize_text`, then lowercased with accents removed by
+    `strip_accents`.
 
     Args:
         text: Raw text.
@@ -47,12 +67,7 @@ def normalize_for_match(text: str) -> str:
     Returns:
         Lowercase, accent-free normalized text.
     """
-    decomposed = unicodedata.normalize(
-        UNICODE_DECOMPOSED_FORM, normalize_text(text).lower()
-    )
-    return "".join(
-        char for char in decomposed if not unicodedata.combining(char)
-    )
+    return strip_accents(normalize_text(text).lower())
 
 
 def join_pages(pages: list[str]) -> str:

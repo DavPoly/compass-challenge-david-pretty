@@ -8,7 +8,7 @@ from collections import Counter
 from qdrant_client import models
 
 from archive.common.constants import STOPWORDS
-from archive.ingest.text_normalize_utils import normalize_for_match
+from archive.common.text.text_normalize_utils import normalize_for_match
 from archive.retrieval.qdrant_constants import (
     CODE_PATTERN,
     HASH_INDEX_MASK,

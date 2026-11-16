@@ -4,13 +4,20 @@ Validation never abstains: a draft that fails a check keeps its status
 and an issue is recorded instead.
 """
 
-import unicodedata
 from collections.abc import Collection
-from datetime import date
 from decimal import Decimal, InvalidOperation, localcontext
 
 from pydantic import BaseModel
 
+from archive.common.text.date_parsing_constants import (
+    DAY_FIRST_DATE_RE,
+    DAY_MONTH_NAME_RE,
+    ISO_DATE_RE,
+    MONTH_NAME_DAY_RE,
+    MONTHS,
+)
+from archive.common.text.date_parsing_utils import build_iso_date
+from archive.common.text.text_normalize_utils import strip_accents
 from archive.validation.answer_model import (
     AnswerStatus,
     DraftAnswer,
@@ -20,11 +27,8 @@ from archive.validation.issue_model import IssueCode, ValidationIssue
 from archive.validation.validation_constants import (
     AMOUNT_RE,
     AMOUNT_ROUNDING,
-    DAY_FIRST_DATE_RE,
-    DAY_MONTH_NAME_RE,
     DECIMAL_PLACES,
     INVISIBLE_SPACE_RE,
-    ISO_DATE_RE,
     ISSUE_CONFLICT_CITATIONS,
     ISSUE_DROPPED,
     ISSUE_NO_CITATION,
@@ -35,8 +39,6 @@ from archive.validation.validation_constants import (
     MAX_DECIMAL_DIGITS,
     MAX_UNAMBIGUOUS_MONTH,
     MIN_CONFLICT_CITATIONS,
-    MONTH_NAME_DAY_RE,
-    MONTHS,
     NOT_FOUND_ANSWER,
     PDF_SUFFIX,
     SEPARATOR_RE,
@@ -52,18 +54,6 @@ class ValidationResult(BaseModel):
     dropped_citations: list[str]
 
 
-def _strip_accents(text: str) -> str:
-    decomposed = unicodedata.normalize("NFKD", text)
-    return "".join(c for c in decomposed if not unicodedata.combining(c))
-
-
-def _make_date(year: int, month: int, day: int) -> str | None:
-    try:
-        return date(year, month, day).isoformat()
-    except ValueError:
-        return None
-
-
 def normalize_date(text: str) -> str | None:
     """Return ISO form when the whole text is one date, else None.
 
@@ -72,7 +62,7 @@ def normalize_date(text: str) -> str | None:
     is otherwise ambiguous with MM/DD/YYYY; the scorer tries both
     orders, so an ambiguous date is left as written.
     """
-    plain = _strip_accents(text.strip().rstrip(".")).lower()
+    plain = strip_accents(text.strip().rstrip(".")).lower()
     if match := ISO_DATE_RE.fullmatch(plain):
         year, month, day = match.groups()
     elif match := DAY_FIRST_DATE_RE.fullmatch(plain):
@@ -87,7 +77,7 @@ def normalize_date(text: str) -> str | None:
         month = str(MONTHS[name])
     else:
         return None
-    return _make_date(int(year), int(month), int(day))
+    return build_iso_date(int(year), int(month), int(day))
 
 
 def _is_decimal_mark(digits: str, separators: list[int]) -> bool:
