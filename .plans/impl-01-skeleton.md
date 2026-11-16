@@ -4,7 +4,7 @@
 **Parent:** [impl-00-roadmap.md](impl-00-roadmap.md), [global-architecture.md](global-architecture.md)
 **Orchestrator branch `B`:** `feat/skeleton` (cut from `main`)
 **BASE:** `bb65fa4c4855a1b2328605f3b6ceec1510f1b457`
-**Subagent branches:** `chore/tracer` (T0)
+**Subagent branches:** `chore/tracer` (T0, merged), `feat/ingest-text` (T1), `feat/llm-gateway` (T2), `feat/validation` (T3)
 
 ## Goal
 
@@ -158,3 +158,10 @@ so tests needing PDFs read from the kit's
   onnxruntime in step 01, and the stopword config stays committed (the global
   plan's intent). Step 03 adds fastembed for dense vectors only.
 - 2026-11-16: Python 3.11 dev venv (eval minimum; avoids missing 3.14 wheels).
+- 2026-11-16 (T0): sparse values use BM25-style TF saturation
+  (`tf*(k1+1)/(tf+k1)`, k1=1.2); raw TF ranked a doc repeating "2023"
+  above the doc holding `BRV-2023-11`. Hyphenated codes are indexed whole
+  and as parts.
+- 2026-11-16: `archive/ingest/` will already hold 5 modules after T4, so
+  T1's constants go in `archive/common/constants.py` (T1 is its only
+  owner in batch A) rather than a sixth `ingest_constants.py`.
