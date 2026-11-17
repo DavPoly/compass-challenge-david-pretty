@@ -77,4 +77,3 @@ def test_open_engine_closes_search_on_exit(
         assert closed == []
 
     assert closed == [True]
-
