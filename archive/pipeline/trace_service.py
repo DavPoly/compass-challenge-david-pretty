@@ -1,9 +1,20 @@
 """Build the trace of one question from what the pipeline produced."""
 
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from archive.agent.answer_service import DraftOutcome
-from archive.pipeline.trace_model import QuestionTrace, RetrievedChunk
+from archive.common.step_model import (
+    StepCallback,
+    StepEvent,
+    emit_step,
+)
+from archive.pipeline.trace_model import (
+    QuestionTrace,
+    RetrievedChunk,
+    StepRecord,
+)
 from archive.retrieval.search_service import SearchHit
 from archive.validation.answer_model import FinalAnswer
 from archive.validation.answer_validator import ValidationResult
@@ -19,6 +30,40 @@ class AnswerParts:
     outcome: DraftOutcome | None = None
     result: ValidationResult | None = None
     report: GroundingReport | None = None
+    steps: tuple[StepRecord, ...] = ()
+
+
+class StepRecorder:
+    """Step callback that records each event, then forwards it.
+
+    ``elapsed_s`` of a record is the time since the recorder was
+    created. A failing ``on_step`` never breaks answering.
+    """
+
+    def __init__(
+        self,
+        on_step: StepCallback | None = None,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._on_step = on_step
+        self._clock = clock
+        self._started_s = clock()
+        self._records: list[StepRecord] = []
+
+    def __call__(self, event: StepEvent) -> None:
+        self._records.append(
+            StepRecord(
+                step=event.step,
+                detail=event.detail,
+                elapsed_s=self._clock() - self._started_s,
+            )
+        )
+        emit_step(self._on_step, event.step, event.detail)
+
+    @property
+    def records(self) -> tuple[StepRecord, ...]:
+        """The steps heard so far, in order."""
+        return tuple(self._records)
 
 
 def _retrieved(hits: list[SearchHit]) -> list[RetrievedChunk]:
@@ -68,4 +113,5 @@ def build_trace(
         grounding=parts.report,
         final=parts.answer,
         error=error,
+        steps=list(parts.steps),
     )

@@ -5,3 +5,13 @@ EXTRACTS_DETAIL = "{count} extraits"
 RECIPE_DETAIL = "{count} extraits ({recipe})"
 DRAFT_DETAIL = "brouillon {number}"
 FIRST_DRAFT_NUMBER = 1
+
+STEP_LABELS = {
+    "route": "Routage de la question",
+    "retrieve": "Recherche dans les archives",
+    "draft": "Rédaction de la réponse",
+    "hop": "Recherche complémentaire",
+    "validate": "Validation du format et des citations",
+    "ground": "Vérification des citations",
+    "render": "Rendu des pages sources",
+}

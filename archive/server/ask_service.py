@@ -10,6 +10,7 @@ from pathlib import Path
 from archive.common.step_model import PipelineStep, StepEvent, emit_step
 from archive.pipeline.engine.engine_service import Engine, answer_one
 from archive.pipeline.trace_gateway import TraceWriter
+from archive.pipeline.trace_model import StepRecord
 from archive.pipeline.trace_service import build_trace
 from archive.server.server_constants import (
     LIVE_ID_FORMAT,
@@ -103,6 +104,9 @@ class AskService:
         parts = answer_one(question, self._engine, on_step=emit)
         elapsed_s = self._clock() - started_s
         trace = build_trace(LIVE_RUN_ID, question, parts, elapsed_s, None)
+        trace.steps.append(
+            StepRecord(step=PipelineStep.RENDER, elapsed_s=elapsed_s)
+        )
         self._writer.write(trace)
         logger.info(LOG_QUESTION_SAVED, question.id, elapsed_s)
         emit_step(emit, PipelineStep.RENDER)

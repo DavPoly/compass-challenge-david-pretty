@@ -1,3 +1,4 @@
+import itertools
 from pathlib import Path
 
 import pytest
@@ -99,3 +100,58 @@ def test_corpus_is_ready_logs_the_missing_corpus(
 ) -> None:
     assert not corpus_is_ready(tmp_path)
     assert "No PDF found in corpus directory" in caplog.text
+
+
+def test_answer_one_records_steps_in_order_with_rising_time(
+    indexed: tuple[AppConfig, str],  # noqa: F811
+    engine_llm: FakeLlm,
+) -> None:
+    config, query = indexed
+    ticks = itertools.count()
+    events: list[StepEvent] = []
+
+    with open_engine(config) as engine:
+        parts = answer_one(
+            Question(id="q", question=query),
+            engine,
+            events.append,
+            clock=lambda: float(next(ticks)),
+        )
+
+    assert [record.step for record in parts.steps] == [
+        event.step for event in events
+    ]
+    assert [record.detail for record in parts.steps] == [
+        event.detail for event in events
+    ]
+    times = [record.elapsed_s for record in parts.steps]
+    assert times == sorted(times)
+    assert times[0] > 0
+
+
+def test_failing_callback_still_records_steps(
+    indexed: tuple[AppConfig, str],  # noqa: F811
+    engine_llm: FakeLlm,
+) -> None:
+    config, query = indexed
+
+    def broken(event: StepEvent) -> None:
+        raise RuntimeError("boom")
+
+    with open_engine(config) as engine:
+        parts = answer_one(Question(id="q", question=query), engine, broken)
+
+    assert parts.steps[-1].step is PipelineStep.GROUND
+
+
+def test_invalid_question_records_no_step(
+    indexed: tuple[AppConfig, str],  # noqa: F811
+    engine_llm: FakeLlm,
+) -> None:
+    config, _ = indexed
+    invalid = Question(id="q", question="", is_valid=False, error="empty")
+
+    with open_engine(config) as engine:
+        parts = answer_one(invalid, engine)
+
+    assert parts.steps == ()

@@ -1,6 +1,8 @@
 """Constants of the live question server."""
 
-from archive.common.step_model import PipelineStep
+from archive.common.step_constants import STEP_LABELS
+
+__all__ = ["STEP_LABELS"]
 
 HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
@@ -39,16 +41,6 @@ EVENT_STEP = "step"
 EVENT_RESULT = "result"
 EVENT_ERROR = "error"
 SSE_FORMAT = "event: {name}\ndata: {data}\n\n"
-
-STEP_LABELS = {
-    PipelineStep.ROUTE: "Routage de la question",
-    PipelineStep.RETRIEVE: "Recherche dans les archives",
-    PipelineStep.DRAFT: "Rédaction de la réponse",
-    PipelineStep.HOP: "Recherche complémentaire",
-    PipelineStep.VALIDATE: "Validation du format et des citations",
-    PipelineStep.GROUND: "Vérification des citations",
-    PipelineStep.RENDER: "Rendu des pages sources",
-}
 
 MSG_BUSY = (
     "Une question est déjà en cours de traitement. Réessayez dans un instant."
