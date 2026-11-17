@@ -1,10 +1,11 @@
+import contextlib
 import json
 import logging
 import re
 import shutil
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -29,6 +30,7 @@ from archive.ingest.build.index_builder_service import (
 from archive.llm.llm_gateway import LlmUnavailableError, Messages
 from archive.pipeline import run_service
 from archive.pipeline.engine import engine_service
+from archive.pipeline.engine.engine_service import Engine
 from archive.pipeline.pipeline_constants import (
     EXIT_ERROR,
     EXIT_OK,
@@ -414,6 +416,44 @@ def test_missing_or_empty_corpus_exits_one(
     assert code == EXIT_ERROR
     assert str(corpus) in caplog.text
     assert "corpus/" in caplog.text
+
+
+def test_engine_startup_oserror_reports_the_index_not_the_answers_file(
+    indexed: tuple[AppConfig, str],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+) -> None:
+    def broken_open(config: AppConfig) -> Iterator[Engine]:
+        raise OSError("disk unreadable")
+        yield  # pragma: no cover - makes this a generator
+
+    monkeypatch.setattr(
+        run_service, "open_engine", contextlib.contextmanager(broken_open)
+    )
+    questions = write_questions(tmp_path / "q.jsonl", [{"id": "a"}])
+
+    code = run_service.run(questions, tmp_path / "a.jsonl", indexed[0])
+
+    assert code == EXIT_ERROR
+    assert "Cannot open the index" in caplog.text
+    assert "disk unreadable" in caplog.text
+    assert "I/O error while answering" not in caplog.text
+
+
+def test_unwritable_answers_file_keeps_the_io_message(
+    indexed: tuple[AppConfig, str],
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+) -> None:
+    questions = write_questions(tmp_path / "q.jsonl", [{"id": "a"}])
+    answers = tmp_path / "missing_dir" / "a.jsonl"
+
+    code = run_service.run(questions, answers, indexed[0])
+
+    assert code == EXIT_ERROR
+    assert "I/O error while answering" in caplog.text
+    assert "Cannot open the index" not in caplog.text
 
 
 def failing_sync(*_args: object, **_kwargs: object) -> None:
