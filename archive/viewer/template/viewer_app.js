@@ -49,7 +49,9 @@
   function formatDate(iso) {
     var date = new Date(iso);
     if (!iso || isNaN(date.getTime())) return iso || "";
-    return date.toLocaleString("fr-FR", { dateStyle: "long", timeStyle: "short" });
+    var day = new Intl.DateTimeFormat("fr-CA", { day: "numeric", month: "long", year: "numeric" });
+    var time = new Intl.DateTimeFormat("fr-CA", { hour: "numeric", minute: "2-digit" });
+    return day.format(date) + ", " + time.format(date);
   }
   function decimal(number, digits) { return number.toFixed(digits).replace(".", ","); }
   function tone(name) { return "t-" + name; }
