@@ -1,6 +1,6 @@
 # Plan: step 08 first pass — README (`impl-08-hardening-report`, pass 1)
 
-**Status:** in-progress (pass 1)
+**Status:** pass 1 done (README); pass 2 pending after steps 06 and 07
 **BASE:** 17471bace84606151c142d9e392ce1fcdc6433f2 (`feat/hardening-report`)
 **Subagent branches:** `docs/readme-first-pass`
 **Parent:** `.plans/impl-00-roadmap.md` step 08, `CHALLENGE.md` "Livrable".
@@ -98,3 +98,25 @@ token limits.
 - The checks stay green on B: `ruff check . --exclude .claude`,
   `ruff format --check . --exclude .claude`, `mypy --strict archive
   scripts answer.py`, `pytest -q`. Nothing in the code changes.
+
+## Decisions log
+
+- 2026-11-17: pass 1 covers the README only (user choice), in French.
+  The REPORT will be written in Markdown first and converted to PDF
+  later.
+- 2026-11-17: the README quotes the real messages, captured by running
+  `answer.py` with dummy `LLM_*` vars. The `corpus/` check runs before
+  the questions-file check, so the README documents that order. The
+  retry list is broader than the brief (408, 409, 429, 5xx, timeouts),
+  as in `archive/llm/`. The disabled reranker is not mentioned.
+- 2026-11-17: the planned `reviewer` pass was replaced by the main
+  agent's own read of the 122-line README against the subagent's
+  verified claims, to save tokens. The checks are green (625 tests).
+
+## Pass 2 (resume point)
+
+After steps 06 and 07:
+- REPORT.md, then REPORT.pdf (2 pages max);
+- fill the Angle libre and Démo sections of the README;
+- the robustness runs and the clean-venv install timing;
+- optionally `scripts/evaluate.py`.
