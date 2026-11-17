@@ -102,3 +102,9 @@ def test_title_below_the_header_window_is_ignored() -> None:
 @pytest.mark.parametrize("text", ["", "   \n\n", "Bonjour tout le monde"])
 def test_untitled_text_is_unknown(text: str) -> None:
     assert detect_doc_type(text) is DocType.UNKNOWN
+
+
+def test_typo_in_single_word_title_is_not_recovered() -> None:
+    """Accepted trade-off: single-word typos stay UNKNOWN to avoid
+    false matches on similar words."""
+    assert detect_doc_type("Politiquc de télétravail") is DocType.UNKNOWN
