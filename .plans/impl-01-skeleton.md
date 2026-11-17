@@ -1,10 +1,10 @@
 # Step 01: walking skeleton
 
-**Status:** approved
+**Status:** done
 **Parent:** [impl-00-roadmap.md](impl-00-roadmap.md), [global-architecture.md](global-architecture.md)
 **Orchestrator branch `B`:** `feat/skeleton` (cut from `main`)
-**BASE:** _(record `git rev-parse B` here before T0; never overwrite)_
-**Subagent branches:** _(record each `<type>/<slug>` here when created)_
+**BASE:** `bb65fa4c4855a1b2328605f3b6ceec1510f1b457`
+**Subagent branches:** `chore/tracer` (T0, merged), `feat/ingest-text` (T1, merged), `feat/llm-gateway` (T2, merged), `feat/validation` (T3, merged), `feat/retrieval-index` (T4, merged), `feat/agent-runner` (T5, merged); review fix round 1: `fix/run-exit`, `fix/llm-repair`, `fix/validation-formats`, `fix/index-integrity`
 
 ## Goal
 
@@ -158,3 +158,123 @@ so tests needing PDFs read from the kit's
   onnxruntime in step 01, and the stopword config stays committed (the global
   plan's intent). Step 03 adds fastembed for dense vectors only.
 - 2026-11-16: Python 3.11 dev venv (eval minimum; avoids missing 3.14 wheels).
+- 2026-11-16 (T0): sparse values use BM25-style TF saturation
+  (`tf*(k1+1)/(tf+k1)`, k1=1.2); raw TF ranked a doc repeating "2023"
+  above the doc holding `BRV-2023-11`. Hyphenated codes are indexed whole
+  and as parts.
+- 2026-11-16: `archive/ingest/` will already hold 5 modules after T4, so
+  T1's constants go in `archive/common/constants.py` (T1 is its only
+  owner in batch A) rather than a sixth `ingest_constants.py`.
+- 2026-11-16 (T1): no identifier typos found in ~760 scanned PDFs; typos
+  sit in prose (month names matched with difflib, cutoff 0.8). The parser
+  stays tolerant anyway. The first 200 docs are all single-chunk.
+- 2026-11-16 (T2): `LlmResponseError` subclasses `LlmUnavailableError`.
+  Worst-case retries (5 × 45 s) exceed the 60 s question budget; T5 must
+  bound each call by the remaining question time.
+- 2026-11-16 (T3): merge was 798 lines (≈400 tests), over the soft 700
+  budget, merged anyway. `validate` takes `question_id` as a first
+  argument. score.py facts: false abstention costs 0.17 extra; any invalid
+  cited id zeroes that question's citation score; over-citing is
+  penalised by `(len(gold)+1)/len(cited)`; money tolerance 0.5%; gold
+  `not_found` answer is `""`.
+- 2026-11-16 (T4): full build 83 s on 22 cores, 3,048 docs, 3,048 chunks
+  (all single-chunk), 0 failures, `storage.sqlite` 14.2 MB. Date filters
+  use Qdrant `DatetimeRange` on the ISO string. Reads are serialised by a
+  lock. Retrieval baseline on the 17 samples with gold citations: mean
+  gold-doc recall@8 = 0.67, ≥1 gold doc in top 8 for 15/17; s01 and s12
+  (policy/superseded, no code) miss entirely; s20 = 0.06 (aggregation).
+- 2026-11-16 (T5): merge was 940 lines (≈480 tests), over the soft 700
+  budget, merged anyway. LLM budget retuned: 12 s request timeout, 3
+  attempts, backoff cap 4 s, Retry-After cap 8 s → one request chain
+  ≤ 52 s; a repair chain can still overrun, and the runner's 60 s budget
+  then writes `not_found`. Lines are written in completion order;
+  duplicate question ids keep the first occurrence.
+- 2026-11-16: V is blocked on the user's `LLM_*` variables, so the
+  pre-commit review runs before V instead of after.
+- 2026-11-16 (fix round 1): every regression test mutation-verified —
+  fails with its fix reverted. run-exit finished two broken edits:
+  DOCUMENT_TAG_ESCAPE needs a double backslash (r"<\\document") and
+  the tag regex needs re.IGNORECASE; tests/agent/test_draft_service.py
+  joined run-exit's owned set as the only home for the tag tests.
+- 2026-11-16 (fix round 1): amounts round half up (0.125 $ → 0.13) via
+  AMOUNT_ROUNDING/_format_amount, inferred from required behaviour;
+  drop AMOUNT_ROUNDING if the scorer proves half-even.
+- 2026-11-16 (fix round 1): index-integrity renamed
+  test_tracer_spike.py → test_sparse_code_ranking.py (30-PDF ranking
+  probe) and took tests/retrieval/test_search_service.py into its
+  owned set for the open/close-on-failure tests.
+- 2026-11-16 (fix round 1): slices committed as 309/261/325/382 lines,
+  all over the 200-line soft commit budget with no clean split; merged
+  --no-ff as 595ac80/92eb544/6975a53/44a89b7, all checks green
+  (223 tests) on feat/skeleton.
+- 2026-11-16 (round 2): text normalize utils moved to
+  `archive/common/text` (fixes the retrieval→ingest sideways import);
+  `strip_accents` canonical there, validation's private duplicate
+  deleted; month/date tables unified in
+  `common/text/date_parsing_{constants,utils}`. Ingest stays
+  abbreviation-blind via `fuzzy_month_number(token,
+  MONTH_FULL_NAMES)` — routing ingest through merged MONTHS would have
+  dated "12 jan 2024", so the table is an argument, not a global.
+- 2026-11-16 (round 2): score.py stays frozen: it is the organizer's
+  eval harness and importing archive.* would couple scoring to the
+  solution; its MONTHS/strip_accents/date-regex duplicates are
+  accepted (known, contained, untested).
+- 2026-11-16 (round 2): the merged table changes _MONTH_NAMES
+  alternation tie order (dict insertion order); length-desc sort keeps
+  prefix behaviour, equivalence sweep over table × samples: 0 diffs.
+- 2026-11-16 (round 2): all date pattern constants stayed together in
+  `common/text/date_parsing_constants.py` (one date-domain home);
+  `ingest_constants.py` carries no date patterns;
+  `common/constants.py` slimmed to shared config/stopword/glob values.
+- 2026-11-16 (round 2): refactor commits 30/65/349/113 lines (the 349
+  lands tables + consumers + pin tests together), merge diff 529
+  lines — under the 700 merge budget; checks green, 232 tests.
+- 2026-11-16 (review): pre-commit review on bb65fa4..3cf56be: reviewer
+  — nothing blocking (teardown race MINOR, scroll spin NIT,
+  first-JSON-object repair burn NIT, one missing dedupe test);
+  quality — 14 MINOR/NIT, no MAJOR. Fix round fix/review-findings
+  merged as 52d2edf: 6 commits, 281 lines, 239 tests (+7).
+- 2026-11-16 (review): SearchService.close drains _read_lock under
+  QUERY_DRAIN_TIMEOUT_S (3 s) and closes anyway on expiry — teardown
+  can narrow the race but never hang the run; late worker writes are
+  debug-logged discards by design.
+- 2026-11-16 (review): declined — is_opened → except BaseException
+  rewrite (current form behavior-tested, avoids BaseException);
+  test-factory conftest consolidation + kit_samples fixture
+  (churn > win, deferred); try-each-balanced-object in
+  extract_json_object (low probability, repair flow delicate).
+- 2026-11-16 (review): duplicate-id test discriminates keep-first vs
+  keep-last but not the dedupe's presence — AnswerWriter dedupes too
+  and the workers race for the line; ordering is not exposed.
+- 2026-11-16 (V): ran on feat/skeleton @ c5b37ac with the real LLM:
+  e2e exit 0, 20/20 lines, key shape exact, all citations in corpus/,
+  14.6 s wall (60-question extrapolation ~44 s, bound 10 min); 9
+  answered / 10 not_found / 1 conflict; no retries, repairs or schema
+  fallbacks in the whole run.
+- 2026-11-16 (V): score.py --details baseline — 26.60/45: exactitude
+  15/30 (8/16), fiabilité 8.81/10 (statuses 4/4, 7 unjustified
+  abstentions), citations 2.79/5 (avg over 17). By type: direct 6/6,
+  multi_hop 0/4, aggregation 1/3, superseded 1/3, conflict 1/1,
+  unanswerable 3/3.
+- 2026-11-16 (V): robustness — missing env / questions / corpus all
+  exit 1 with problem+fix messages (corpus case tested via a %TEMP%
+  shadow repo; REPO_ROOT is __file__-based so cwd tricks cannot trigger
+  it). A malformed question line is tolerant by design: warning +
+  not_found, exit 0 — the plan's verification bullet implying exit 1
+  for that case was wrong, the acceptance criteria are correct.
+- 2026-11-16 (V): dominant gap is retrieval depth, not answer
+  formatting: SEARCH_TOP_K=8 < gold-doc counts for s20 (17) and s10
+  (12); s10 answers confidently with ~53% of the gold value — the
+  riskiest failure mode in this run. Step 02 should raise top-k, add
+  dense vectors and multi-hop retrieval before touching formatting.
+
+## Resume point (2026-11-16, V complete — step done)
+
+All impl-01 work merged on `feat/skeleton`. T0–T5, fix round 1,
+round 2, review fix round and V complete: 239 tests, ruff +
+format + mypy --strict green, e2e + robustness verified, score.py
+baseline 26.60/45 recorded in the decisions log above. Nothing
+pushed. Next:
+- Push `feat/skeleton` to the remote on explicit approval.
+- Step 02 per impl-00-roadmap: dense vectors and retrieval depth
+  (SEARCH_TOP_K vs s10/s20 gold counts), multi-hop retrieval.

@@ -1,69 +1,59 @@
 #!/usr/bin/env python3
-"""Point d'entrée de votre solution.
+"""Answer questions about the corpus in ./corpus/.
 
-Commande (toujours la même, lancée depuis la racine de votre repo) :
-    python answer.py questions.jsonl answers.jsonl
+Usage: python answer.py questions.jsonl answers.jsonl
 
-Entrée  : questions.jsonl, une ligne JSON par question : {"id": "q17", "question": "..."}
-Sortie  : answers.jsonl, une ligne JSON par question :
-          {"id": "q17", "answer": "30 jours", "citations": ["doc_042"], "status": "answered"}
-          status vaut "answered", "not_found" (information absente du corpus)
-          ou "conflict" (les sources se contredisent ; citez-les toutes).
-Corpus  : lu dans ./corpus/ (doc_0001.pdf, doc_0002.pdf, ... ; l'identifiant est le nom du fichier sans .pdf).
-
-Accès au modèle : seulement par les trois variables d'environnement ci-dessous.
-N'écrivez jamais de clé ni de nom de modèle en dur dans le code.
-
-Ce squelette répond "not_found" partout, pour que score.py fonctionne tout de suite.
-À vous de le remplacer par votre architecture.
+Input: questions.jsonl, one {"id", "question"} object per line.
+Output: answers.jsonl, one {"id", "answer", "citations", "status"}
+object per question (status: answered, not_found or conflict).
+Environment: LLM_BASE_URL, LLM_API_KEY, LLM_MODEL (all required).
+Exit codes: 0 run completed, 1 unusable input or configuration,
+2 wrong usage.
 """
-import json
+
+import logging
 import os
 import sys
+from collections.abc import Sequence
 from pathlib import Path
+from typing import NoReturn
 
-CORPUS_DIR = Path("corpus")
+from archive.common.config import AppConfig, ConfigError
+from archive.pipeline.pipeline_constants import EXIT_ERROR, EXIT_USAGE
+from archive.pipeline.run_service import run
+
+USAGE = "usage: python answer.py questions.jsonl answers.jsonl"
+EXPECTED_ARG_COUNT = 2
+LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 
 
-def main() -> int:
-    if len(sys.argv) != 3:
-        print("usage : python answer.py questions.jsonl answers.jsonl", file=sys.stderr)
-        return 2
-    questions_path, answers_path = sys.argv[1], sys.argv[2]
-
-    # Fournies par l'environnement lors de l'évaluation (format « chat completions »).
-    llm_base_url = os.environ.get("LLM_BASE_URL")
-    llm_api_key = os.environ.get("LLM_API_KEY")
-    llm_model = os.environ.get("LLM_MODEL")
-    missing = [name for name, value in (("LLM_BASE_URL", llm_base_url), ("LLM_API_KEY", llm_api_key),
-                                        ("LLM_MODEL", llm_model)) if not value]
-    if missing:
-        # Le squelette n'appelle pas le modèle : il avertit seulement. Votre système, lui, devrait
-        # s'arrêter ici avec un message explicite (code de sortie 1).
-        print(f"Avertissement : variable(s) d'environnement manquante(s) : {', '.join(missing)}. "
-              "Exemple : export LLM_MODEL=nom-du-modele", file=sys.stderr)
-
-    if not Path(questions_path).is_file():
-        print(f"Erreur : fichier de questions introuvable : {questions_path}", file=sys.stderr)
-        return 1
-    if not CORPUS_DIR.is_dir():
-        print(f"Erreur : dossier du corpus introuvable : {CORPUS_DIR.resolve()} "
-              "(lancez la commande depuis la racine du repo)", file=sys.stderr)
-        return 1
-
+def main(argv: Sequence[str]) -> int:
+    """Run the command on `argv` (without the program name)."""
+    if len(argv) != EXPECTED_ARG_COUNT:
+        print(USAGE, file=sys.stderr)
+        return EXIT_USAGE
     try:
-        with open(questions_path, encoding="utf-8") as f:
-            questions = [json.loads(line) for line in f if line.strip()]
-    except json.JSONDecodeError as e:
-        print(f"Erreur : {questions_path} n'est pas un JSONL valide (ligne {e.lineno}) : {e.msg}", file=sys.stderr)
-        return 1
+        config = AppConfig.from_env()
+    except ConfigError as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return EXIT_ERROR
+    return run(Path(argv[0]), Path(argv[1]), config)
 
-    with open(answers_path, "w", encoding="utf-8") as out:
-        for q in questions:
-            answer = {"id": q["id"], "answer": "", "citations": [], "status": "not_found"}
-            out.write(json.dumps(answer, ensure_ascii=False) + "\n")
-    return 0
+
+def exit_now(code: int) -> NoReturn:
+    """Flush logs and std streams, then end the process at once.
+
+    Worker threads stuck in a network call would otherwise be joined at
+    interpreter exit; the answers file is already closed by `run`.
+    """
+    logging.shutdown()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    logging.basicConfig(
+        level=logging.INFO, format=LOG_FORMAT, stream=sys.stderr
+    )
+    exit_now(main(sys.argv[1:]))
