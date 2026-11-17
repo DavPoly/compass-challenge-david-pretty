@@ -31,8 +31,6 @@ from archive.pipeline.pipeline_constants import (
     LOG_OVER_BUDGET,
     LOG_TRACE_WRITE_FAILED,
     LOG_UNEXPECTED_ERROR,
-    LOG_VIEWER_FAILED,
-    LOG_VIEWER_READY,
     MSG_DEADLINE_TRACE,
     MSG_IO_ERROR,
     MSG_LATE_TRACE,
@@ -49,13 +47,6 @@ from archive.validation.input_model import (
     QuestionsFileError,
     load_questions,
 )
-from archive.viewer.page_render_gateway import render_evidence
-from archive.viewer.viewer_build_service import (
-    ViewerBudget,
-    ViewerRequest,
-    build_viewer,
-)
-from archive.viewer.viewer_constants import VIEWER_GRACE_S
 
 logger = logging.getLogger(__name__)
 
@@ -260,28 +251,6 @@ def _unique(questions: list[Question]) -> list[Question]:
     return unique
 
 
-def _build_viewer(
-    config: AppConfig,
-    run_id: str,
-    deadline_s: float,
-    clock: Callable[[], float],
-) -> None:
-    """Build the run viewer; never raise, it is a best-effort extra."""
-    request = ViewerRequest(
-        trace_dir=config.traces_dir / run_id,
-        corpus_dir=config.corpus_dir,
-        out_dir=config.viewer_dir / run_id,
-        budget=ViewerBudget(deadline_s + VIEWER_GRACE_S, clock),
-        render=render_evidence,
-    )
-    try:
-        index_path = build_viewer(request)
-    except Exception:  # noqa: BLE001 - the viewer must not fail the run
-        logger.exception(LOG_VIEWER_FAILED)
-        return
-    logger.info(LOG_VIEWER_READY, index_path)
-
-
 def _answer_all(
     questions: list[Question], answers_path: Path, context: RunContext
 ) -> int:
@@ -341,5 +310,4 @@ def run(  # noqa: PLR0913, PLR0917 - injectable time sources
     except ENGINE_OPEN_ERRORS as error:
         log_engine_open_failure(config, error)
         return EXIT_ERROR
-    _build_viewer(config, run_id, deadline_s, clock)
     return EXIT_OK
