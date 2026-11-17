@@ -51,6 +51,31 @@ Points à connaître :
   ligne `not_found` ; `answers.jsonl` contient toujours une ligne par id.
 - Le détail du déroulement est journalisé sur stderr.
 
+### Visualiseur (vérifier les réponses)
+
+Après chaque exécution, `answer.py` écrit une trace par question dans
+`traces/<run>/` et une page statique `viewer/<run>/index.html` (son chemin
+est affiché dans les logs ; l'ouvrir dans un navigateur, sans serveur).
+Elle montre, pour chaque question :
+
+- les citations avec la page du PDF surlignée : vert si la citation est
+  vérifiée, rouge si elle est absente du document ;
+- les valeurs de la réponse non retrouvées dans les preuves ;
+- pourquoi la confiance est haute, moyenne ou basse ;
+- les sources en conflit, côte à côte.
+
+Garde-fou de temps : les images ne sont produites que dans le budget
+(échéance globale + 90 s) ; au-delà, la page affiche les citations en
+texte seul. Une erreur du visualiseur ne change ni `answers.jsonl` ni le
+code de sortie.
+
+Pour le reconstruire, avec la correction en plus :
+
+```bash
+python <kit>/score.py answers.jsonl --json --details > scores.json
+python scripts/build_viewer.py traces/<run> --scores scores.json
+```
+
 ## Messages d'erreur
 
 Les erreurs vont sur stderr ; les messages `ERROR` du pipeline sont préfixés
