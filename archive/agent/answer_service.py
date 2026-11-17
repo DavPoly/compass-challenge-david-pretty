@@ -42,5 +42,5 @@ def _run_recipe(
     if plan.family is QuestionFamily.AGGREGATION:
         return run_aggregation(question, plan, search, llm)
     if plan.family is QuestionFamily.SUPERSEDED:
-        return run_superseded(question, plan, search)
+        return run_superseded(question, plan, search, llm)
     return None

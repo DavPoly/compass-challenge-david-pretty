@@ -210,7 +210,7 @@ def check_recipes(
     for question_id in SUPERSEDED_IDS:
         gold = golds[question_id]
         superseded = run_superseded(
-            _question(question_id, gold), PLANS[question_id], search
+            _question(question_id, gold), PLANS[question_id], search, llm
         )
         lines.append(superseded_line(question_id, gold, superseded))
     for question_id in FALLBACK_IDS:

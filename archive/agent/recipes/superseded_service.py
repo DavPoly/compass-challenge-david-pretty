@@ -1,112 +1,147 @@
 """Superseded recipe: pick the policy version in force."""
 
+import datetime
 import logging
-from itertools import zip_longest
+
+from pydantic import BaseModel
 
 from archive.agent.recipes.recipe_constants import (
+    LOG_SUPERSEDED_LLM_DOWN,
+    LOG_SUPERSEDED_NO_SERIES,
+    LOG_SUPERSEDED_NO_VERSION,
     POLICY_DOC_TYPE,
+    SUPERSEDED_CHOICE_SYSTEM_PROMPT,
+    SUPERSEDED_CHOICE_USER_PROMPT,
     SUPERSEDED_LIST_CAP,
     SUPERSEDED_NOTE_TEMPLATE,
     SUPERSEDED_PERIOD_CLOSED,
     SUPERSEDED_PERIOD_OPEN,
-    SUPERSEDED_RRF_OFFSET,
     SUPERSEDED_SEARCH_K,
-    SUPERSEDED_SERIES_MARGIN,
+    SUPERSEDED_SERIES_LINE,
     SUPERSEDED_TODAY_LABEL,
+    SUPERSEDED_TOPIC_LINE,
+    SUPERSEDED_UNKNOWN_LANG,
 )
 from archive.agent.recipes.recipe_model import RecipeResult, RecipeSearchPort
 from archive.agent.route.route_model import QuestionPlan
+from archive.llm.llm_gateway import LlmGateway, LlmUnavailableError
 from archive.retrieval.search_service import SearchFilters, SearchHit
 from archive.validation.input_model import Question
 
 logger = logging.getLogger(__name__)
 
 
+class PolicyChoice(BaseModel):
+    """LLM reply: the 1-based number of the chosen series, or None."""
+
+    series_number: int | None = None
+
+
+def _today() -> str:
+    """Today's date as ISO text (patched in tests)."""
+    return datetime.date.today().isoformat()
+
+
 def run_superseded(
-    question: Question, plan: QuestionPlan, search: RecipeSearchPort
+    question: Question,
+    plan: QuestionPlan,
+    search: RecipeSearchPort,
+    llm: LlmGateway,
 ) -> RecipeResult | None:
     """Gather the policy versions and name the one in force.
 
-    The series comes from the best policy search hit that has one,
-    searching on the policy topic (or the question text). All versions
-    of that series are listed; the one in force on `plan.as_of_date`
-    (or the latest one when there is no date) goes first.
+    The LLM picks the policy series from the list of all policies
+    (it can match across French and English). All versions of that
+    series are listed; the one in force on `plan.as_of_date` (or today
+    when there is no date) goes first.
 
     Args:
         question: The question being answered.
         plan: Routing plan; `as_of_date` and `policy_topic` are used.
         search: Search port.
+        llm: Gateway used to choose the series.
 
     Returns:
         The hits and a note for the draft prompt, or None when no
         series or version in force is found (use the direct path).
     """
-    filters = SearchFilters(doc_types=[POLICY_DOC_TYPE])
-    queries = [question.question]
-    if plan.policy_topic:
-        queries.append(plan.policy_topic)
-    rankings = [
-        search.hybrid_search(query, filters, SUPERSEDED_SEARCH_K)
-        for query in queries
-    ]
-    top_hits = _merge_rankings(rankings)
-    series = _winning_series(rankings)
-    if series is None:
-        logger.info("question %s: no clear policy series", question.id)
-        return None
-    versions = _series_versions(
-        [*top_hits, *search.list_by_filter(filters, SUPERSEDED_LIST_CAP)],
-        series,
+    policies = search.list_by_filter(
+        SearchFilters(doc_types=[POLICY_DOC_TYPE]), SUPERSEDED_LIST_CAP
     )
-    picked = _pick_version(versions, plan.as_of_date)
-    if picked is None:
-        logger.info(
-            "question %s: no version in force on %s",
-            question.id,
-            plan.as_of_date,
-        )
+    series_list = _series_keys(policies)
+    series = _choose_series(question, plan, series_list, policies, llm)
+    if series is None:
         return None
+    versions = _series_versions(policies, series)
+    as_of = plan.as_of_date or _today()
+    picked = _pick_version(versions, as_of)
+    if picked is None:
+        logger.info(LOG_SUPERSEDED_NO_VERSION, question.id, as_of)
+        return None
+    top_hits = search.hybrid_search(
+        question.question,
+        SearchFilters(doc_types=[POLICY_DOC_TYPE]),
+        SUPERSEDED_SEARCH_K,
+    )
     return RecipeResult(
         hits=_order_hits(picked, versions, top_hits),
         note=_build_note(picked, plan.as_of_date),
     )
 
 
-def _merge_rankings(rankings: list[list[SearchHit]]) -> list[SearchHit]:
-    """Interleave rankings by rank, dropping repeated documents."""
-    merged: list[SearchHit] = []
-    seen: set[str] = set()
-    for rank_hits in zip_longest(*rankings):
-        for hit in rank_hits:
-            if hit is not None and hit.chunk.doc_id not in seen:
-                seen.add(hit.chunk.doc_id)
-                merged.append(hit)
-    return merged
+def _series_keys(policies: list[SearchHit]) -> list[str]:
+    """Distinct series keys, in first-seen order."""
+    keys = {hit.chunk.series: None for hit in policies if hit.chunk.series}
+    return list(keys)
 
 
-def _winning_series(rankings: list[list[SearchHit]]) -> str | None:
-    """Vote for a series by summed reciprocal rank over all rankings.
-
-    Returns None unless the top series beats the runner-up by
-    `SUPERSEDED_SERIES_MARGIN` (a ratio), so ambiguous questions fall
-    back to the direct path.
-    """
-    scores: dict[str, float] = {}
-    for hits in rankings:
-        for rank, hit in enumerate(hits, start=1):
-            if hit.chunk.series:
-                scores[hit.chunk.series] = scores.get(
-                    hit.chunk.series, 0.0
-                ) + 1 / (SUPERSEDED_RRF_OFFSET + rank)
-    ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
-    if not ranked:
+def _choose_series(
+    question: Question,
+    plan: QuestionPlan,
+    series_list: list[str],
+    policies: list[SearchHit],
+    llm: LlmGateway,
+) -> str | None:
+    """Ask the LLM which series the question is about."""
+    langs = {
+        hit.chunk.series: hit.chunk.lang
+        for hit in policies
+        if hit.chunk.series
+    }
+    lines = [
+        SUPERSEDED_SERIES_LINE.format(
+            number=number,
+            series=series,
+            lang=langs.get(series) or SUPERSEDED_UNKNOWN_LANG,
+        )
+        for number, series in enumerate(series_list, start=1)
+    ]
+    topic_line = (
+        SUPERSEDED_TOPIC_LINE.format(topic=plan.policy_topic)
+        if plan.policy_topic
+        else ""
+    )
+    user = SUPERSEDED_CHOICE_USER_PROMPT.format(
+        policies="\n".join(lines),
+        question=question.question,
+        topic_line=topic_line,
+    )
+    try:
+        choice = llm.complete_json(
+            [
+                {"role": "system", "content": SUPERSEDED_CHOICE_SYSTEM_PROMPT},
+                {"role": "user", "content": user},
+            ],
+            PolicyChoice,
+        )
+    except LlmUnavailableError:
+        logger.warning(LOG_SUPERSEDED_LLM_DOWN, question.id)
         return None
-    if (
-        len(ranked) > 1
-        and ranked[0][1] < SUPERSEDED_SERIES_MARGIN * ranked[1][1]
-    ):
+    number = choice.series_number
+    if number is None or not 1 <= number <= len(series_list):
+        logger.info(LOG_SUPERSEDED_NO_SERIES, question.id, number)
         return None
-    return ranked[0][0]
+    return series_list[number - 1]
 
 
 def _series_versions(hits: list[SearchHit], series: str) -> list[SearchHit]:
@@ -118,21 +153,13 @@ def _series_versions(hits: list[SearchHit], series: str) -> list[SearchHit]:
     return list(by_doc.values())
 
 
-def _pick_version(
-    versions: list[SearchHit], as_of_date: str | None
-) -> SearchHit | None:
-    """Pick the version in force on the date (latest when None)."""
-    dated = [hit for hit in versions if hit.chunk.effective_from]
-    if as_of_date is None:
-        return max(
-            dated, key=lambda hit: hit.chunk.effective_from or "", default=None
-        )
-    for hit in dated:
+def _pick_version(versions: list[SearchHit], as_of: str) -> SearchHit | None:
+    """Pick the version in force on the ISO date, if any."""
+    for hit in versions:
         chunk = hit.chunk
-        starts = chunk.effective_from or ""
-        if starts <= as_of_date and (
-            chunk.effective_to is None or as_of_date < chunk.effective_to
-        ):
+        if not chunk.effective_from or chunk.effective_from > as_of:
+            continue
+        if chunk.effective_to is None or as_of < chunk.effective_to:
             return hit
     return None
 
