@@ -28,10 +28,14 @@ from archive.validation.answer_validator import (
 )
 from archive.validation.grounding.grounding_constants import (
     BARE_AMOUNT_SUFFIX,
+    BARE_INTEGER_RE,
+    BARE_YEAR_RE,
     DATE_SCAN_PATTERNS,
     ISSUE_NO_EVIDENCE,
     ISSUE_QUOTE_UNVERIFIED,
     ISSUE_VALUE_UNGROUNDED,
+    LABEL_BEFORE_RE,
+    ORDINAL_AFTER_RE,
     TRAILING_PUNCTUATION,
 )
 from archive.validation.grounding.grounding_model import (
@@ -68,6 +72,32 @@ def _day_first_readings(match: re.Match[str]) -> set[str]:
     return {reading for reading in readings if reading}
 
 
+def _is_label_or_year(folded: str, match: re.Match[str]) -> bool:
+    """True for a bare integer that is a year, label or ordinal."""
+    if match["before"] or match["after"]:
+        return False
+    number = match["number"]
+    if not BARE_INTEGER_RE.fullmatch(number):
+        return False
+    if BARE_YEAR_RE.fullmatch(number):
+        return True
+    if LABEL_BEFORE_RE.search(folded[: match.start("number")]):
+        return True
+    return bool(ORDINAL_AFTER_RE.match(folded[match.end("number") :]))
+
+
+def _scan_amounts(folded: str) -> set[str]:
+    """Amounts in text whose dates were blanked out."""
+    for pattern in DATE_SCAN_PATTERNS:
+        folded = pattern.sub(lambda m: " " * len(m.group(0)), folded)
+    return {
+        amount
+        for match in AMOUNT_RE.finditer(folded)
+        if not _is_label_or_year(folded, match)
+        if (amount := _amount_key(match["number"]))
+    }
+
+
 def _scan_keys(folded: str) -> set[str]:
     """Normalized dates and amounts occurring in folded text."""
     keys: set[str] = set()
@@ -77,10 +107,7 @@ def _scan_keys(folded: str) -> set[str]:
                 keys.add(date)
     for match in DAY_FIRST_DATE_RE.finditer(folded):
         keys |= _day_first_readings(match)
-    for match in AMOUNT_RE.finditer(folded):
-        if amount := _amount_key(match["number"]):
-            keys.add(amount)
-    return keys
+    return keys | _scan_amounts(folded)
 
 
 def _is_grounded(item: str, haystacks: list[str]) -> bool:

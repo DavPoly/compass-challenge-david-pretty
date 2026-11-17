@@ -19,6 +19,27 @@ DATE_SCAN_PATTERNS: tuple[re.Pattern[str], ...] = (
 BARE_AMOUNT_SUFFIX = " $"
 TRAILING_PUNCTUATION = ".,;:"
 
+# Words that make a following bare integer a label, not an amount.
+LABEL_WORDS = (
+    "version",
+    "v",
+    "n°",
+    "no",
+    "article",
+    "section",
+    "page",
+    "étape",
+    "etape",
+)
+LABEL_BEFORE_RE = re.compile(
+    rf"(?:\b|(?<=n°))(?:{'|'.join(re.escape(w) for w in LABEL_WORDS)})"
+    r"\.?\s*$",
+    re.IGNORECASE,
+)
+ORDINAL_AFTER_RE = re.compile(r"(?:er|ère|e|ème|st|nd|rd|th)\b", re.IGNORECASE)
+BARE_YEAR_RE = re.compile(r"(?:19|20)\d{2}")
+BARE_INTEGER_RE = re.compile(r"\d+")
+
 ISSUE_QUOTE_UNVERIFIED = (
     "quote for {doc_id} not found in its retrieved text: {quote!r}"
 )
