@@ -259,3 +259,11 @@ decisions log, and the roadmap's decision to drop the classifier).
   current (user choice). `run_superseded` gains an `llm` parameter.
 - 2026-11-17: T2 merge was 817 lines (≈420 tests), over the 700 soft
   budget; T4 399 lines. Both flagged and merged.
+- 2026-11-17 user scored run: 33.14/45 (bar 33.30 missed). aggregation
+  3/3 (s20 fixed), superseded 3/3, direct 6/6, conflict 1/1, multi_hop
+  0/4, unanswerable 2/3: s11 ("hours billed by X on BRV-2019-19") was
+  routed aggregation with measure=None and the recipe summed invoice
+  money (480650.00). Route accuracy 16/17. Questions phase ~16 s.
+  Fix: aggregation needs a money measure (None → direct) and the route
+  prompt keeps hours/counts out of aggregation.
+- Fix round: `fix/agg-money-only` (s11 guard).
