@@ -153,3 +153,6 @@ inline.
   ellipsis are verified piece by piece in order. A whitespace-free
   fallback match was added. Amounts or dates inside an answer item are
   grounded when every one of them matches. 671 tests passing.
+- 2026-11-17: sample rerun scored 45.00/45. 17 questions were rated high,
+  and 3 medium: s02, s11 and s18, the unanswerable ones (not_found with
+  hits retrieved, as designed). None were rated low.
