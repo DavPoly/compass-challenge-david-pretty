@@ -81,3 +81,7 @@ remove what is listed here without a decisions-log entry in this file.
 - 2026-11-17: step 04 routes with regex plus one LLM plan call; the
   local classifier and its generated training set were dropped to save
   time before the deadline. Score 35.64/45 after step 04.
+- 2026-11-17: step 05 replaces the LLM tool-calling ReAct loop with
+  identifier expansion plus a draft loop driven by `missing` (at most 3
+  drafts, 30 s hop budget) and a one-hop safety net for direct
+  questions. Score 45.00/45 on the samples after step 05.

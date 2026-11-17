@@ -1,10 +1,10 @@
 # Plan: step 05, multi-hop loop and safety net (`impl-05-react-safety-net`)
 
-**Status:** in-progress
+**Status:** done
 **Parent:** `.plans/impl-00-roadmap.md` step 05, `.plans/global-architecture.md` §3
 **Orchestrator branch B:** `feat/react-safety-net`, cut from `main` @ 88328c8 (step 04 merged).
 **BASE:** 88328c852b5d118f347d92e8f0b3f370da41bec7
-**Subagent branches:** feat/hops-tracer (T0), feat/hops-expand (T1), feat/hops-loop (T2)
+**Subagent branches:** feat/hops-tracer (T0), feat/hops-expand (T1), feat/hops-loop (T2), fix/expand-shared-codes, fix/hops-promote-linked, fix/hops-partial-chain, fix/hops-chain-cite-log, fix/hops-review (all merged and deleted)
 
 Before cutting B:
 1. Merge `feat/router-recipes` into `main` locally (`--no-ff`, no push). This is the user's choice.
@@ -222,3 +222,37 @@ agent commits only `docs:` plan updates.
   and costs fewer LLM calls (user choice).
 - 2026-11-17: step 04 is merged into main before step 05 is cut (user
   choice).
+- 2026-11-17: expansion pivots on codes shared by ≥ 2 hits and lists
+  per code. On s04 the "contrat" hint filled the top ranks with unrelated
+  contracts, and the charter sat at rank 12.
+- 2026-11-17: the prompt moves original hits linked to targeted ones
+  forward, and reserves 4 slots for original hits. Each hop adds at
+  most 6 new hits.
+- 2026-11-17: the draft prompt has a "partial chain" rule (on a partial
+  chain, set `evidence_sufficient=false` and name the next fact in
+  `missing`) and a "chain citations" rule. The old
+  `evidence_sufficient` description let the LLM stop with not_found, so
+  no hop ever ran.
+- 2026-11-17: a follow-up happens only when the evidence is
+  insufficient and `missing` names a fact (not the empty-retrieval
+  sentinel). A final not_found never replaces an earlier answered
+  draft. The hop budget is 30 s from question start. These came from
+  review round 1.
+- 2026-11-17: a second review cycle was skipped. The round 1 fixes are
+  covered by tests and by a 45/45 rerun.
+
+## Measurements
+
+| Run | Score | multi_hop | Notes |
+|---|---|---|---|
+| step 04 baseline | 35.64 | 0/4 | |
+| expansion + loop | 37.98 | 1/4 | the loop never fired (sufficient=true on not_found) |
+| partial-chain prompt | 42.51 | 3/4 | s04 citations 0.5, s08 not_found |
+| chain citations + draft log | 45.00 | 4/4 | |
+| after review round 1 | 45.00 | 4/4 | questions phase ~17 s; 625 tests green |
+
+## Resume point
+
+Step 05 is done on `feat/react-safety-net`, which is not merged to main
+and not pushed. Next is step 06 (grounding) or step 08 (hardening and
+report). Step 08 starts this evening at the latest, per the roadmap.
