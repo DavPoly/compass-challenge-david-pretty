@@ -15,6 +15,7 @@ from archive.agent.retrieve_service import retrieve
 from archive.agent.route.route_model import QuestionFamily, QuestionPlan
 from archive.agent.route.route_service import plan_question
 from archive.common.step_constants import (
+    DETAIL_LABELS,
     DRAFT_DETAIL,
     EXTRACTS_DETAIL,
     FIRST_DRAFT_NUMBER,
@@ -62,7 +63,7 @@ def answer_question(
     """
     started_s = time.monotonic()
     plan = plan_question(question, llm)
-    emit_step(on_step, PipelineStep.ROUTE, plan.family.value)
+    emit_step(on_step, PipelineStep.ROUTE, _detail_label(plan.family.value))
     result = _run_recipe(question, plan, search, llm)
     if result is None:
         hits = retrieve(question.question, search, SEARCH_TOP_K)
@@ -81,7 +82,8 @@ def answer_question(
             on_step,
             PipelineStep.RETRIEVE,
             RECIPE_DETAIL.format(
-                count=len(result.hits), recipe=plan.family.value
+                count=len(result.hits),
+                recipe=_detail_label(plan.family.value),
             ),
         )
     if result.draft is not None:
@@ -89,6 +91,10 @@ def answer_question(
     return _draft_with_safety_net(
         question, result, plan, search, llm, started_s, on_step
     )
+
+
+def _detail_label(code: str) -> str:
+    return DETAIL_LABELS.get(code, code)
 
 
 def _draft_with_safety_net(  # noqa: PLR0913, PLR0917 - one value per input

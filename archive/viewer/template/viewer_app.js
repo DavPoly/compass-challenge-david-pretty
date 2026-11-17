@@ -147,6 +147,16 @@
     }
     return box;
   }
+  var NOTE_TITLES = { aggregation: "Calcul vérifié", superseded: "Version en vigueur retenue" };
+  function noteNotice(question) {
+    var title = NOTE_TITLES[question.family] || "Note du moteur";
+    if (question.family === "aggregation") return notice("green", "check", title, document.createTextNode(question.note));
+    var body = el("div", { class: "note-internal" }, [
+      el("span", { class: "note-hint", text: "(note interne) " }),
+      document.createTextNode(question.note)
+    ]);
+    return notice("gray", "doc", title, body);
+  }
   function noticesFor(question) {
     var list = [];
     var reasons = question.confidence_reasons || [];
@@ -169,7 +179,7 @@
     if ((question.dropped_citations || []).length) {
       list.push(notice("gray", "doc", "Citations écartées (non retrouvées dans le document)", bulletList(question.dropped_citations)));
     }
-    if (question.note) list.push(notice("green", "check", "Calcul vérifié", document.createTextNode(question.note)));
+    if (question.note) list.push(noteNotice(question));
     return el("div", { class: "notices" }, list);
   }
   function documentsList(question) {

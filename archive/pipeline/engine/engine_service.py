@@ -11,6 +11,7 @@ from pathlib import Path
 from archive.agent.answer_service import DraftOutcome, answer_question
 from archive.common.config import AppConfig
 from archive.common.constants import PDF_GLOB
+from archive.common.step_constants import DETAIL_LABELS
 from archive.common.step_model import PipelineStep, StepCallback, emit_step
 from archive.ingest.build.index_sync_service import sync_index
 from archive.ingest.build.manifest_gateway import ManifestError
@@ -213,7 +214,13 @@ def answer_one(
         outcome.doc_ids,
         engine.valid_doc_ids,
     )
-    emit_step(recorder, PipelineStep.VALIDATE, result.answer.status.value)
+    emit_step(
+        recorder,
+        PipelineStep.VALIDATE,
+        DETAIL_LABELS.get(
+            result.answer.status.value, result.answer.status.value
+        ),
+    )
     for issue in result.issues:
         logger.info(LOG_QUESTION_ISSUE, question.id, issue)
     if result.dropped_citations:
@@ -223,7 +230,12 @@ def answer_one(
     report = None
     try:
         report = _log_grounding(question.id, outcome, result)
-        emit_step(recorder, PipelineStep.GROUND, str(report.confidence))
+        confidence = str(report.confidence)
+        emit_step(
+            recorder,
+            PipelineStep.GROUND,
+            DETAIL_LABELS.get(confidence, confidence),
+        )
     except Exception:  # broad catch at a boundary: flag-only, never fatal
         logger.exception(LOG_GROUNDING_FAILED, question.id)
     return AnswerParts(

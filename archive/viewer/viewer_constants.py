@@ -1,5 +1,6 @@
 """Constants for the static run viewer."""
 
+import re
 from pathlib import Path
 
 VIEWER_DPI = 110
@@ -34,6 +35,8 @@ RETRIEVED_LIMIT = 10
 ACCURACY_DECIMALS = 3
 TRACE_GLOB = "*.json"
 ISSUE_SEPARATOR = ":"
+# "(recipe)" suffix of retrieve details recorded with a raw family code.
+LEGACY_RECIPE_DETAIL = re.compile(r"\((\w+)\)$")
 
 CONFIDENCE_UNKNOWN = "unknown"
 CONFIDENCE_LABELS = ("high", "medium", "low", CONFIDENCE_UNKNOWN)

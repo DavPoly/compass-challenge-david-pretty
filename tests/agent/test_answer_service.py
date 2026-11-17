@@ -360,7 +360,7 @@ def test_direct_path_emits_route_retrieve_draft_in_order(
     events = _collect_steps(monkeypatch, FakeLlm())
 
     assert events == [
-        StepEvent(PipelineStep.ROUTE, "direct"),
+        StepEvent(PipelineStep.ROUTE, "question directe"),
         StepEvent(PipelineStep.RETRIEVE, "1 extraits"),
         StepEvent(PipelineStep.DRAFT, "brouillon 1"),
     ]
@@ -381,7 +381,7 @@ def test_recipe_retrieve_step_names_the_recipe(
         PipelineStep.ROUTE,
         PipelineStep.RETRIEVE,
     ]
-    assert events[1].detail == "1 extraits (aggregation)"
+    assert events[1].detail == "1 extraits (agrégation)"
 
 
 def test_safety_net_emits_hop_with_the_missing_gap(
