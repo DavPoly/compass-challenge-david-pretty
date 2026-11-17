@@ -132,3 +132,16 @@ def test_llm_failure_propagates() -> None:
 
     with pytest.raises(LlmUnavailableError):
         draft(QUESTION, [make_hit("doc_0001", "t")], as_gateway(fake))
+
+
+def test_build_messages_without_note_has_no_note_section() -> None:
+    user = build_messages(QUESTION, [])[1]["content"]
+
+    assert "Note:" not in user
+    assert user == f"Documents:\n\n\nQuestion: {QUESTION.question}\n"
+
+
+def test_build_messages_renders_the_note_before_the_question() -> None:
+    user = build_messages(QUESTION, [], note="use v2")[1]["content"]
+
+    assert user.endswith(f"Note: use v2\n\nQuestion: {QUESTION.question}\n")
