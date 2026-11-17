@@ -1,6 +1,6 @@
 # Plan: step 04, router and recipes (`impl-04-router-recipes`)
 
-**Status:** in-progress
+**Status:** done
 **BASE:** 161204412e88aaf6c782860d2b9b1a976f92945d
 **Parent:** `.plans/impl-00-roadmap.md` step 04, `.plans/global-architecture.md` §3
 **Orchestrator branch B:** `feat/router-recipes`, cut from `main` @ 1612044
@@ -286,3 +286,16 @@ decisions log, and the roadmap's decision to drop the classifier).
 - Deferred (accepted): duplicated gold loading in `scripts/`;
   `scripts/` over the 5-file folder limit (pre-existing); moving
   `normalize_amount` to `archive/common/text/`.
+- 2026-11-17 user scored run after review round 1: 35.64/45, unchanged
+  (all families 100% except multi_hop 0/4). Step 04 closed; a second
+  review round was skipped (narrow fixes, each with regression tests).
+
+## Resume point
+
+2026-11-17, step 04 done on `feat/router-recipes`: regex + LLM plan
+router, invoice aggregation recipe (exact Decimal, s07/s10/s20 exact),
+superseded recipe (LLM series pick, today-based "in force"), shared
+untrusted-text delimiting. 575 tests, checks green, score 35.64/45.
+Nothing pushed. Next: merge to `main` on approval; then step 05
+(multi_hop, 4 sample misses), 06 (grounding) and 08 (hardening,
+report) before the Wed 12:00 deadline.
