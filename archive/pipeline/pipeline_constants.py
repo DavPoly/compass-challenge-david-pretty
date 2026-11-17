@@ -40,6 +40,8 @@ LOG_MODELS_ACTIVE = "search models: dense=%s, rerank=%s"
 LOG_DENSE_UNAVAILABLE = "dense model unavailable: BM25-only search"
 MODEL_LOAD_WORKERS = 2
 LOG_TRACE_WRITE_FAILED = "question %s: trace not written"
+LOG_VIEWER_READY = "viewer ready: open %s in a browser"
+LOG_VIEWER_FAILED = "viewer not built; answers are unaffected"
 RUN_ID_FORMAT = "%Y%m%d-%H%M%S"
 TRACE_SUFFIX = ".json"
 TRACE_ENCODING = "utf-8"

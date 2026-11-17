@@ -935,3 +935,48 @@ def test_trace_building_failure_never_reaches_the_answer(
     assert code == EXIT_OK
     assert read_answers(answers)["q1"]["status"] == "answered"
     assert not run_dir.exists()
+
+
+def test_run_builds_the_viewer_next_to_the_traces(
+    indexed: tuple[AppConfig, str],
+    fake_llm: FakeLlm,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    config, query = indexed
+    config = replace(config, viewer_dir=tmp_path / "viewer")
+    questions = write_questions(
+        tmp_path / "q.jsonl", [{"id": "q1", "question": query}]
+    )
+
+    with caplog.at_level(logging.INFO):
+        code, _ = run_traced(questions, tmp_path / "a.jsonl", config, tmp_path)
+
+    index_page = tmp_path / "viewer" / RUN_ID / "index.html"
+    assert code == EXIT_OK
+    assert index_page.is_file()
+    assert "viewer ready" in caplog.text
+
+
+def test_viewer_failure_keeps_answers_and_exit_code(
+    indexed: tuple[AppConfig, str],
+    fake_llm: FakeLlm,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def explode(_request: object) -> Path:
+        raise RuntimeError("viewer boom")
+
+    monkeypatch.setattr(run_service, "build_viewer", explode)
+    config, query = indexed
+    questions = write_questions(
+        tmp_path / "q.jsonl", [{"id": "q1", "question": query}]
+    )
+    answers = tmp_path / "a.jsonl"
+
+    code, _ = run_traced(questions, answers, config, tmp_path)
+
+    assert code == EXIT_OK
+    assert read_answers(answers)["q1"]["status"] == "answered"
+    assert "viewer not built" in caplog.text

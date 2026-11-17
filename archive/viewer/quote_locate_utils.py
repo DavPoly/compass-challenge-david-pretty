@@ -16,9 +16,7 @@ from archive.validation.grounding.grounding_constants import (
     PUNCTUATION_FOLD,
     WHITESPACE_RE,
 )
-
-# Words whose tops differ by at most this many points share a line.
-LINE_TOP_TOLERANCE_PT = 3.0
+from archive.viewer.viewer_constants import LINE_TOP_TOLERANCE_PT
 
 
 @dataclass(frozen=True)
