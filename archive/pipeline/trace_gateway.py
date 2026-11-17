@@ -1,5 +1,6 @@
 """Write question traces to disk; a failure is logged, never raised."""
 
+import hashlib
 import logging
 import os
 import re
@@ -12,6 +13,8 @@ from archive.pipeline.pipeline_constants import (
     RUN_ID_FORMAT,
     TRACE_ENCODING,
     TRACE_FALLBACK_NAME,
+    TRACE_HASH_CHARS,
+    TRACE_HASH_SEPARATOR,
     TRACE_JSON_INDENT,
     TRACE_SAFE_NAME_PATTERN,
     TRACE_SUFFIX,
@@ -35,13 +38,21 @@ def trace_filename(question_id: str) -> str:
 
     Characters outside ``[A-Za-z0-9_.-]`` become ``_``; a name made of
     dots only (``.``, ``..``) or empty is replaced, so the result can
-    never leave the run directory.
+    never leave the run directory. When the name was altered or the id
+    has an uppercase letter (file systems may ignore case), the first
+    8 hex characters of the id's SHA-1 are appended so distinct ids
+    never share a file. Plain lowercase ids stay readable (``s01``).
     """
     safe = re.sub(
         TRACE_SAFE_NAME_PATTERN, TRACE_UNSAFE_REPLACEMENT, question_id
     )
+    needs_hash = safe != question_id or safe != safe.lower()
     if not safe or _DOTS_ONLY.fullmatch(safe):
         safe = TRACE_FALLBACK_NAME
+        needs_hash = True
+    if needs_hash:
+        digest = hashlib.sha1(question_id.encode("utf-8")).hexdigest()
+        safe += TRACE_HASH_SEPARATOR + digest[:TRACE_HASH_CHARS]
     return safe + TRACE_SUFFIX
 
 
