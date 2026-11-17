@@ -28,3 +28,4 @@ traces/
 .pytest_cache/
 .cache/
 .claude/temp_worktree/
+viewer/

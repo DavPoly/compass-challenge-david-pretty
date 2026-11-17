@@ -39,3 +39,13 @@ LOG_SYNC_REPORT = (
 LOG_MODELS_ACTIVE = "search models: dense=%s, rerank=%s"
 LOG_DENSE_UNAVAILABLE = "dense model unavailable: BM25-only search"
 MODEL_LOAD_WORKERS = 2
+LOG_TRACE_WRITE_FAILED = "question %s: trace not written"
+RUN_ID_FORMAT = "%Y%m%d-%H%M%S"
+TRACE_SUFFIX = ".json"
+TRACE_ENCODING = "utf-8"
+TRACE_TEMP_SUFFIX = ".tmp"
+TRACE_JSON_INDENT = 2
+TRACE_SAFE_NAME_PATTERN = r"[^A-Za-z0-9_.-]"
+TRACE_UNSAFE_REPLACEMENT = "_"
+TRACE_FALLBACK_NAME = "question"
+TRACE_VERSION = 1
