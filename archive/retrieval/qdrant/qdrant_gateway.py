@@ -1,4 +1,4 @@
-"""Embedded Qdrant access: sparse (BM25-style) indexing and search."""
+"""Embedded Qdrant access: sparse and dense indexing and search."""
 
 import logging
 import threading
@@ -12,6 +12,8 @@ from archive.common.chunk_model import Chunk
 from archive.retrieval.qdrant.qdrant_constants import (
     BUILD_HINT,
     COLLECTION_NAME,
+    DENSE_LENGTH_ERROR,
+    DENSE_VECTOR_NAME,
     FIELD_DOC_ID,
     FIELD_SERIES,
     KEYWORD_PAYLOAD_FIELDS,
@@ -84,14 +86,31 @@ class QdrantGateway:
         """Whether the chunk collection exists."""
         return self._client.collection_exists(COLLECTION_NAME)
 
-    def ensure_collection(self) -> None:
-        """Create the sparse collection and payload indexes if absent."""
+    def has_dense(self) -> bool:
+        """Whether the collection config has the dense vector."""
+        vectors = self._client.get_collection(
+            COLLECTION_NAME
+        ).config.params.vectors
+        return isinstance(vectors, dict) and DENSE_VECTOR_NAME in vectors
+
+    def ensure_collection(self, dense_dim: int | None = None) -> None:
+        """Create the collection and payload indexes if absent.
+
+        Args:
+            dense_dim: When set, the collection also gets the named
+                cosine dense vector of this size.
+        """
         with self._write_lock:
             if self._client.collection_exists(COLLECTION_NAME):
                 return
+            dense_config: dict[str, models.VectorParams] = {}
+            if dense_dim is not None:
+                dense_config[DENSE_VECTOR_NAME] = models.VectorParams(
+                    size=dense_dim, distance=models.Distance.COSINE
+                )
             self._client.create_collection(
                 collection_name=COLLECTION_NAME,
-                vectors_config={},
+                vectors_config=dense_config,
                 sparse_vectors_config={
                     SPARSE_VECTOR_NAME: models.SparseVectorParams(
                         modifier=models.Modifier.IDF
@@ -109,14 +128,37 @@ class QdrantGateway:
                         models.PayloadSchemaType.KEYWORD,
                     )
 
-    def upsert(self, chunks: Sequence[Chunk]) -> None:
-        """Insert or replace chunks, in batches."""
+    def upsert(
+        self,
+        chunks: Sequence[Chunk],
+        dense: Sequence[list[float] | None] | None = None,
+    ) -> None:
+        """Insert or replace chunks, in batches.
+
+        Args:
+            chunks: Chunks to index.
+            dense: Optional dense vector per chunk, aligned with
+                `chunks`; a None entry indexes that chunk sparse-only.
+
+        Raises:
+            ValueError: if `dense` and `chunks` differ in length.
+        """
+        if dense is not None and len(dense) != len(chunks):
+            raise ValueError(DENSE_LENGTH_ERROR % (len(dense), len(chunks)))
+        vectors = dense or [None] * len(chunks)
         with self._write_lock:
             for start in range(0, len(chunks), UPSERT_BATCH_SIZE):
-                batch = chunks[start : start + UPSERT_BATCH_SIZE]
+                end = start + UPSERT_BATCH_SIZE
                 self._client.upsert(
                     COLLECTION_NAME,
-                    points=[self._to_point(chunk) for chunk in batch],
+                    points=[
+                        self._to_point(chunk, vector)
+                        for chunk, vector in zip(
+                            chunks[start:end],
+                            vectors[start:end],
+                            strict=True,
+                        )
+                    ],
                 )
 
     def delete_docs(self, doc_ids: Collection[str]) -> None:
@@ -150,6 +192,46 @@ class QdrantGateway:
             query=vector,
             using=SPARSE_VECTOR_NAME,
             query_filter=query_filter,
+            limit=k,
+            with_payload=True,
+        )
+        return [
+            (Chunk.model_validate(point.payload), point.score)
+            for point in response.points
+        ]
+
+    def query_hybrid(  # noqa: PLR0913 - frozen interface
+        self,
+        sparse: models.SparseVector,
+        dense: list[float] | None,
+        query_filter: models.Filter | None,
+        k: int,
+        prefetch_k: int,
+    ) -> list[tuple[Chunk, float]]:
+        """Fuse sparse and dense rankings with RRF, best first.
+
+        Each side prefetches `prefetch_k` filtered candidates. With
+        `dense=None` this is `query_sparse`.
+        """
+        if dense is None:
+            return self.query_sparse(sparse, query_filter, k)
+        response = self._client.query_points(
+            COLLECTION_NAME,
+            prefetch=[
+                models.Prefetch(
+                    query=sparse,
+                    using=SPARSE_VECTOR_NAME,
+                    filter=query_filter,
+                    limit=prefetch_k,
+                ),
+                models.Prefetch(
+                    query=dense,
+                    using=DENSE_VECTOR_NAME,
+                    filter=query_filter,
+                    limit=prefetch_k,
+                ),
+            ],
+            query=models.FusionQuery(fusion=models.Fusion.RRF),
             limit=k,
             with_payload=True,
         )
@@ -196,9 +278,16 @@ class QdrantGateway:
         self._client.close()
 
     @staticmethod
-    def _to_point(chunk: Chunk) -> models.PointStruct:
+    def _to_point(
+        chunk: Chunk, dense: list[float] | None = None
+    ) -> models.PointStruct:
+        vector: dict[str, models.SparseVector | list[float]] = {
+            SPARSE_VECTOR_NAME: sparse_vector(chunk.text)
+        }
+        if dense is not None:
+            vector[DENSE_VECTOR_NAME] = dense
         return models.PointStruct(
             id=point_id(chunk.chunk_id),
-            vector={SPARSE_VECTOR_NAME: sparse_vector(chunk.text)},
+            vector=vector,
             payload=chunk.model_dump(mode="json"),
         )
