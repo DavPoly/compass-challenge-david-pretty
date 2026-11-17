@@ -295,6 +295,7 @@ def _question_view(
         confidence=grounding.confidence.value if grounding else None,
         confidence_reasons=_confidence_reasons(trace),
         ungrounded_values=grounding.ungrounded_values if grounding else [],
+        missing_values=grounding.missing_values if grounding else [],
         dropped_citations=trace.dropped_citations,
         note=trace.note,
         error=trace.error,

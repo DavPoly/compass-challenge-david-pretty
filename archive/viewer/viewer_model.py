@@ -73,6 +73,7 @@ class QuestionView(BaseModel):
     confidence: str | None
     confidence_reasons: list[str]
     ungrounded_values: list[str]
+    missing_values: list[str] = []
     dropped_citations: list[str]
     note: str | None
     error: str | None

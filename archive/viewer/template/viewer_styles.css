@@ -188,6 +188,7 @@ button:disabled { cursor: default; }
 .notice-body ul { margin: 0; padding-left: 20px; }
 .note-internal { font-size: 14px; opacity: 0.8; }
 .note-hint { font-style: italic; }
+.notice-body .missing-context { margin-top: 8px; font-size: 14px; }
 .notice-body .strike { text-decoration: line-through; }
 .doc-rows { display: grid; gap: 4px; margin-top: 24px; }
 .doc-row { display: flex; align-items: center; gap: 16px; padding: 12px; border-radius: var(--radius-sm); }

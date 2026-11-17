@@ -563,3 +563,25 @@ def test_legacy_raw_step_details_become_french(
     view = question_view_from_trace(trace, _live_request(tmp_path))
 
     assert view.steps[0].detail == expected
+
+
+def test_question_view_maps_missing_values(tmp_path: Path) -> None:
+    trace = make_trace("q1", ["x"])
+    grounding = trace.grounding.model_copy(  # type: ignore[union-attr]
+        update={"missing_values": ["0,53 $"]}
+    )
+    trace = trace.model_copy(update={"grounding": grounding})
+
+    view = question_view_from_trace(trace, _live_request(tmp_path))
+
+    assert view.missing_values == ["0,53 $"]
+
+
+def test_question_view_without_grounding_has_no_missing_values(
+    tmp_path: Path,
+) -> None:
+    trace = make_trace("q1", ["x"]).model_copy(update={"grounding": None})
+
+    view = question_view_from_trace(trace, _live_request(tmp_path))
+
+    assert view.missing_values == []
