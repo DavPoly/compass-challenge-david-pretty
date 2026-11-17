@@ -389,6 +389,30 @@ def test_failed_sync_continues_on_the_existing_index(
     assert "index sync failed" in caplog.text
 
 
+def test_unexpected_sync_error_continues_on_the_existing_index(
+    indexed: tuple[AppConfig, str],
+    fake_llm: FakeLlm,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+) -> None:
+    def broken_sync(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("pool died")
+
+    monkeypatch.setattr(run_service, "sync_index", broken_sync)
+    config, query = indexed
+    questions = write_questions(
+        tmp_path / "q.jsonl", [{"id": "q", "question": query}]
+    )
+
+    with caplog.at_level(logging.WARNING):
+        code = run_service.run(questions, tmp_path / "a.jsonl", config)
+
+    assert code == EXIT_OK
+    assert (tmp_path / "a.jsonl").is_file()
+    assert "pool died" in caplog.text
+
+
 def test_unwritable_answers_path_exits_one(
     indexed: tuple[AppConfig, str], fake_llm: FakeLlm, tmp_path: Path
 ) -> None:
