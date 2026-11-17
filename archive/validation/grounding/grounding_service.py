@@ -31,6 +31,7 @@ from archive.validation.grounding.grounding_constants import (
     BARE_INTEGER_RE,
     BARE_YEAR_RE,
     DATE_SCAN_PATTERNS,
+    IDENTIFIER_RE,
     ISSUE_NO_EVIDENCE,
     ISSUE_QUOTE_UNVERIFIED,
     ISSUE_VALUE_UNGROUNDED,
@@ -45,6 +46,8 @@ from archive.validation.grounding.grounding_model import (
 )
 from archive.validation.issue_model import IssueCode, ValidationIssue
 from archive.validation.validation_constants import AMOUNT_RE
+
+KeySpan = tuple[set[str], tuple[int, int]]
 
 
 def _is_verified(evidence: Evidence, sources: GroundingSources) -> bool:
@@ -86,28 +89,47 @@ def _is_label_or_year(folded: str, match: re.Match[str]) -> bool:
     return bool(ORDINAL_AFTER_RE.match(folded[match.end("number") :]))
 
 
-def _scan_amounts(folded: str) -> set[str]:
-    """Amounts in text whose dates were blanked out."""
-    for pattern in DATE_SCAN_PATTERNS:
+def _blank(folded: str, patterns: Iterable[re.Pattern[str]]) -> str:
+    """Text with every match of ``patterns`` replaced by spaces."""
+    for pattern in patterns:
         folded = pattern.sub(lambda m: " " * len(m.group(0)), folded)
-    return {
-        amount
-        for match in AMOUNT_RE.finditer(folded)
-        if not _is_label_or_year(folded, match)
-        if (amount := _amount_key(match["number"]))
-    }
+    return folded
+
+
+def _amount_spans(folded: str) -> list[KeySpan]:
+    """Amounts in text whose dates and identifiers were blanked."""
+    folded = _blank(folded, (IDENTIFIER_RE, *DATE_SCAN_PATTERNS))
+    spans: list[KeySpan] = []
+    for match in AMOUNT_RE.finditer(folded):
+        if _is_label_or_year(folded, match):
+            continue
+        if amount := _amount_key(match["number"]):
+            spans.append(({amount}, match.span()))
+    return spans
+
+
+def _date_spans(folded: str) -> list[KeySpan]:
+    """Dates (both readings when ambiguous) in identifier-free text."""
+    folded = _blank(folded, (IDENTIFIER_RE,))
+    spans: list[KeySpan] = []
+    for pattern in DATE_SCAN_PATTERNS:
+        for match in pattern.finditer(folded):
+            if date := normalize_date(match.group(0)):
+                spans.append(({date}, match.span()))
+    for match in DAY_FIRST_DATE_RE.finditer(folded):
+        if readings := _day_first_readings(match):
+            spans.append((readings, match.span()))
+    return spans
+
+
+def _key_spans(folded: str) -> list[KeySpan]:
+    """Keys of the dates and amounts in folded text, with their spans."""
+    return _date_spans(folded) + _amount_spans(folded)
 
 
 def _scan_keys(folded: str) -> set[str]:
     """Normalized dates and amounts occurring in folded text."""
-    keys: set[str] = set()
-    for pattern in DATE_SCAN_PATTERNS:
-        for match in pattern.finditer(folded):
-            if date := normalize_date(match.group(0)):
-                keys.add(date)
-    for match in DAY_FIRST_DATE_RE.finditer(folded):
-        keys |= _day_first_readings(match)
-    return keys | _scan_amounts(folded)
+    return set().union(*(keys for keys, _ in _key_spans(folded)))
 
 
 def _is_grounded(item: str, haystacks: list[str]) -> bool:
@@ -126,6 +148,26 @@ def _is_grounded(item: str, haystacks: list[str]) -> bool:
     return bool(embedded_keys) and embedded_keys <= known_keys
 
 
+def _missing_values(item: str, haystacks: list[str]) -> list[str]:
+    """Embedded values of an ungrounded item found in no haystack.
+
+    Each is the original text span; the whole item when it holds no
+    embedded value or every one is known.
+    """
+    trimmed = item.strip().rstrip(TRAILING_PUNCTUATION)
+    folded = fold_text(trimmed)
+    known = set().union(*(_scan_keys(haystack) for haystack in haystacks))
+    source = trimmed if len(trimmed) == len(folded) else folded
+    missing = [
+        source[start:end].strip()
+        for keys, (start, end) in sorted(
+            _key_spans(folded), key=lambda key_span: key_span[1]
+        )
+        if not keys <= known
+    ]
+    return missing or [item]
+
+
 def _answer_items(draft: DraftAnswer) -> list[str]:
     raw = draft.answer
     items = raw if isinstance(raw, list) else [raw]
@@ -134,15 +176,22 @@ def _answer_items(draft: DraftAnswer) -> list[str]:
 
 def _ungrounded_values(
     draft: DraftAnswer, verified: list[Evidence], sources: GroundingSources
-) -> list[str]:
+) -> tuple[list[str], list[str]]:
+    """Ungrounded answer items and the values missing inside them."""
     haystacks = [fold_text(evidence.quote) for evidence in verified]
     if sources.note:
         haystacks.append(fold_text(sources.note))
-    return [
+    ungrounded = [
         item
         for item in _answer_items(draft)
         if not _is_grounded(item, haystacks)
     ]
+    missing = [
+        value
+        for item in ungrounded
+        for value in _missing_values(item, haystacks)
+    ]
+    return ungrounded, missing
 
 
 def _issues(code: IssueCode, details: Iterable[str]) -> list[ValidationIssue]:
@@ -190,8 +239,9 @@ def check_grounding(
         evidence for evidence in draft.evidence if evidence not in unverified
     ]
     ungrounded: list[str] = []
+    missing: list[str] = []
     if draft.status is AnswerStatus.ANSWERED:
-        ungrounded = _ungrounded_values(draft, verified, sources)
+        ungrounded, missing = _ungrounded_values(draft, verified, sources)
     issues = _issues(
         IssueCode.QUOTE_UNVERIFIED,
         (
@@ -218,5 +268,6 @@ def check_grounding(
         issues=issues,
         unverified_quotes=[evidence.quote for evidence in unverified],
         ungrounded_values=ungrounded,
+        missing_values=missing,
         confidence=_confidence(draft, sources, validation, is_flagged),
     )
