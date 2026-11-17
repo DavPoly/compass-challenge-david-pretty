@@ -16,8 +16,10 @@ from archive.common.text.date_parsing_constants import (
     MONTH_FULL_NAMES,
     MONTH_FUZZY_CUTOFF,
     MONTH_FUZZY_MIN_LENGTH,
-    SHORT_YEAR_CENTURY,
+    SHORT_YEAR_CENTURY_1900,
+    SHORT_YEAR_CENTURY_2000,
     SHORT_YEAR_DIGITS,
+    SHORT_YEAR_PIVOT,
 )
 from archive.common.text.text_normalize_utils import normalize_for_match
 
@@ -128,5 +130,8 @@ def _match_to_iso(match: re.Match[str]) -> str | None:
         return None
     year = int(groups["y"])
     if len(groups["y"]) == SHORT_YEAR_DIGITS:
-        year += SHORT_YEAR_CENTURY
+        is_recent = year <= SHORT_YEAR_PIVOT
+        year += (
+            SHORT_YEAR_CENTURY_2000 if is_recent else SHORT_YEAR_CENTURY_1900
+        )
     return build_iso_date(year, month, int(groups["d"]))

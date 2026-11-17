@@ -49,11 +49,11 @@ MONTH_NAME_DAY_RE = re.compile(
 # (ingest package).
 DATE_ISO_PATTERN = r"(?<![\d-])(?P<y>\d{4})-(?P<m>\d{2})-(?P<d>\d{2})(?!\d)"
 DATE_NUMERIC_PATTERN = (
-    r"(?<![\d/.])(?P<d>\d{1,2})[/.](?P<m>\d{1,2})[/.]"
+    r"(?<![\w/.])(?P<d>\d{1,2})[/.](?P<m>\d{1,2})[/.]"
     r"(?P<y>\d{4})(?![\d/.])"
 )
 DATE_SHORT_YEAR_PATTERN = (
-    r"(?<![\d/.])(?P<d>\d{2})/(?P<m>\d{2})/(?P<y>\d{2})(?![\d/.])"
+    r"(?<![\w/.])(?P<d>\d{2})/(?P<m>\d{2})/(?P<y>\d{2})(?![\d/.])"
 )
 DATE_DAY_MONTH_WORD_PATTERN = (
     r"(?<!\d)(?P<d>\d{1,2})(?:er|st|nd|rd|th)?\s+"
@@ -68,9 +68,14 @@ DATE_MONTH_YEAR_PATTERN = (
 )
 
 MONTH_FIRST_DAY = 1
-SHORT_YEAR_CENTURY = 2000
+# Two-digit years up to the pivot are 20yy, the others 19yy (the corpus
+# documents span 2019 to 2027).
+SHORT_YEAR_PIVOT = 30
+SHORT_YEAR_CENTURY_2000 = 2000
+SHORT_YEAR_CENTURY_1900 = 1900
 SHORT_YEAR_DIGITS = 2
-MONTH_FUZZY_MIN_LENGTH = 4
+# Short names (mai, juin, june, july) are too close to other words.
+MONTH_FUZZY_MIN_LENGTH = 5
 MONTH_FUZZY_CUTOFF = 0.8
 # A day of 12 or less could be the month, so DD/MM and MM/DD are
 # ambiguous and such a date is left as written.
