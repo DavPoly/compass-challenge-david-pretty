@@ -395,3 +395,106 @@ def test_embedded_amount_differing_from_quote_is_ungrounded() -> None:
     )
 
     assert report.ungrounded_values == ["0.58 $ par kilomètre"]
+
+
+KM_DOC = (
+    "Le taux de remboursement kilométrique est fixé à $0.57 par kilomètre."
+)
+KM_QUOTE = "est fixé à $0.57 par kilomètre."
+KM_NOTE = (
+    "Policy version in force on 2025-01-01: document doc_2692, "
+    "version 2, effective from 2022-01-11 to 2025-01-17."
+)
+
+
+def _km_report(answer: str) -> GroundingReport:
+    sources = GroundingSources(
+        texts_by_doc={"doc_0001": [KM_DOC]}, note=KM_NOTE
+    )
+    evidence = [Evidence(doc_id="doc_0001", quote=KM_QUOTE)]
+    return check_grounding(
+        _draft(answer, evidence=evidence), sources, _validation()
+    )
+
+
+def test_date_parts_and_version_label_do_not_ungrounded_amount() -> None:
+    report = _km_report(
+        "0,57 $ par kilomètre (version 3, en vigueur le 2025-01-17)"
+    )
+
+    assert report.ungrounded_values == []
+    assert report.confidence is not Confidence.LOW
+
+
+def test_unsupported_amount_next_to_version_label_is_flagged() -> None:
+    answer = "0,62 $ (version 3)"
+
+    report = _km_report(answer)
+
+    assert report.ungrounded_values == [answer]
+
+
+@pytest.mark.parametrize(
+    "answer", ["0,57 $ en vigueur le 2025-01-17", "0,57 $ depuis 2025"]
+)
+def test_date_or_year_extra_does_not_create_amount_keys(answer: str) -> None:
+    report = _km_report(answer)
+
+    assert report.ungrounded_values == []
+
+
+LIVE_ANSWER = (
+    "0,57 $ par kilomètre (en vigueur depuis le 2025-01-17; "
+    "0,53 $ avant cette date)"
+)
+
+
+def test_missing_values_name_only_the_unsupported_amount() -> None:
+    sources = GroundingSources(
+        texts_by_doc={"doc_0001": ["Taux de 0,57 $ par kilomètre."]},
+        note="Vigueur depuis le 2025-01-17.",
+    )
+    evidence = [Evidence(doc_id="doc_0001", quote="0,57 $ par kilomètre")]
+
+    report = check_grounding(
+        _draft(LIVE_ANSWER, evidence=evidence), sources, _validation()
+    )
+
+    assert report.ungrounded_values == [LIVE_ANSWER]
+    assert report.missing_values == ["0,53 $"]
+
+
+def test_missing_values_of_plain_text_item_is_the_whole_item() -> None:
+    report = _grounded_report("Montréal", "Siège à Québec.", "Siège")
+
+    assert report.missing_values == ["Montréal"]
+
+
+def test_grounded_answer_has_no_missing_values() -> None:
+    report = _grounded_report(
+        "12 500,00 $", "montant de 12 500,00 $", "12 500"
+    )
+
+    assert report.missing_values == []
+
+
+def test_report_without_missing_values_field_loads() -> None:
+    report = GroundingReport.model_validate(
+        {
+            "issues": [],
+            "unverified_quotes": [],
+            "ungrounded_values": ["x"],
+            "confidence": "low",
+        }
+    )
+
+    assert report.missing_values == []
+
+
+@pytest.mark.parametrize(
+    "answer", ["doc_2692", "F-2023-1084", "BRV-2024-14", "C-2020-99"]
+)
+def test_identifier_yields_no_amount_or_date_key(answer: str) -> None:
+    report = _grounded_report(answer, "Autre texte.", "Autre texte")
+
+    assert report.missing_values == [answer]

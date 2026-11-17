@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Vérifier les réponses</title>
+<style>/*__VIEWER_STYLES__*/</style>
+<script>/*__VIEWER_DOM__*/</script>
+<script>/*__VIEWER_LIST__*/</script>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="panel topbar">
+    <div class="topbar-row">
+      <div class="brand">
+        <span class="avatar ink" style="--s:36px" data-icon="workspaces"></span>
+        <div>
+          <div class="brand-name">Archives</div>
+          <div class="brand-sub">Audit des réponses</div>
+        </div>
+      </div>
+      <form class="search-box searchbar" id="batch-form" role="search">
+        <span data-icon="chat"></span>
+        <input id="batch-input" type="text" autocomplete="off"
+               placeholder="Rechercher dans ce lot (question, famille, réponse)…"
+               aria-label="Rechercher dans le lot">
+        <button class="round" id="batch-clear" type="button" aria-label="Effacer la recherche" hidden data-icon="close"></button>
+        <button class="round ink" id="batch-send" type="submit" aria-label="Rechercher" data-icon="arrow-up"></button>
+      </form>
+    </div>
+    <div class="progress" id="live-panel" aria-live="polite" hidden></div>
+  </header>
+
+  <aside class="panel sidebar" aria-label="Filtres">
+    <label class="search-box" style="border-radius:16px;padding:10px 16px;margin:4px 0 16px">
+      <span data-icon="search"></span>
+      <input id="list-filter" type="text" autocomplete="off" placeholder="Filtrer la liste…" aria-label="Filtrer les questions">
+    </label>
+    <nav class="nav compact" id="status-nav" aria-label="Filtrer par statut"></nav>
+    <div class="spacer"></div>
+    <div class="nav-title" id="conf-title">Niveau de confiance</div>
+    <nav class="nav compact" id="conf-nav" aria-labelledby="conf-title"></nav>
+    <button class="toggle" id="theme-toggle" type="button"></button>
+  </aside>
+
+  <main class="stack" id="main">
+    <div class="stack" id="list-view">
+      <section class="panel page-head">
+        <div>
+          <h1>Vérifier les réponses</h1>
+          <p class="subtitle" id="run-meta"></p>
+          <div class="row wrap run-accuracy" id="run-accuracy"></div>
+        </div>
+        <div class="avatars" id="avatars" role="list" aria-label="Répartition par statut"></div>
+      </section>
+      <section class="panel" id="case-list" aria-live="polite"></section>
+    </div>
+    <div class="stack" id="detail-view" hidden>
+      <div class="toolbar">
+        <div class="row wrap">
+          <button class="outline-btn" id="back" type="button"><span data-icon="arrow-back"></span>Tous les cas</button>
+          <button class="tab" type="button" data-tab="answer" aria-pressed="true">Réponse</button>
+          <button class="tab" type="button" data-tab="documents" aria-pressed="false">Documents consultés</button>
+        </div>
+        <div class="row">
+          <button class="round paper" id="prev" type="button" aria-label="Question précédente" title="Question précédente" data-icon="arrow-back"></button>
+          <button class="round paper" id="next" type="button" aria-label="Question suivante" title="Question suivante" data-icon="arrow-forward"></button>
+        </div>
+      </div>
+      <section class="panel" id="detail" aria-live="polite"></section>
+      <div id="evidence"></div>
+    </div>
+  </main>
+
+  <aside class="rail" aria-label="Synthèse">
+    <div class="rail-top">
+      <section class="panel score" id="score-panel"></section>
+      <section class="panel" id="conf-panel"></section>
+    </div>
+  </aside>
+</div>
+<dialog class="lightbox" id="lightbox" aria-label="Page du document"></dialog>
+<div class="toast" id="toast" role="status" hidden>Lien de la question copié</div>
+<script id="viewer-data" type="application/json">__VIEWER_DATA__</script>
+<script>/*__VIEWER_APP__*/</script>
+<script>/*__VIEWER_LIVE__*/</script>
+</body>
+</html>

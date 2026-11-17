@@ -44,9 +44,14 @@ class GroundingSources:
 
 
 class GroundingReport(BaseModel):
-    """Grounding issues, the flagged strings and the confidence."""
+    """Grounding issues, the flagged strings and the confidence.
+
+    ``missing_values`` names the exact unsupported values inside the
+    ungrounded items, as written in the answer.
+    """
 
     issues: list[ValidationIssue]
     unverified_quotes: list[str]
     ungrounded_values: list[str]
+    missing_values: list[str] = []
     confidence: Confidence

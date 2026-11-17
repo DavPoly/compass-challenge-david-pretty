@@ -9,6 +9,8 @@ ENV_LLM_MODEL = "LLM_MODEL"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CORPUS_DIR_NAME = "corpus"
 INDEX_DIR_NAME = "index"
+TRACES_DIR_NAME = "traces"
+VIEWER_DIR_NAME = "viewer"
 
 API_KEY_MASK = "***"
 
@@ -35,8 +37,12 @@ STOPWORDS_EN = frozenset(
 
 STOPWORDS = STOPWORDS_FR | STOPWORDS_EN
 
+# Format of the root logger of every command-line entry point.
+LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+
 # Corpus and pipeline share this glob.
-PDF_GLOB = "*.pdf"
+PDF_SUFFIX = ".pdf"
+PDF_GLOB = f"*{PDF_SUFFIX}"
 
 # Untrusted text delimited inside LLM prompts.
 QUESTION_TAG = "question"

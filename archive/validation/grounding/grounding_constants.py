@@ -18,25 +18,29 @@ DATE_SCAN_PATTERNS: tuple[re.Pattern[str], ...] = (
 # Lets a bare number such as "12500" parse as a currency amount.
 BARE_AMOUNT_SUFFIX = " $"
 TRAILING_PUNCTUATION = ".,;:"
-PUNCTUATION_FOLD = str.maketrans(
-    {
-        "’": "'",
-        "‘": "'",
-        "ʼ": "'",
-        "«": '"',
-        "»": '"',
-        "“": '"',
-        "”": '"',
-        "„": '"',
-        "–": "-",
-        "—": "-",
-    }
+
+# Words that make a following bare integer a label, not an amount.
+LABEL_WORDS = (
+    "version",
+    "v",
+    "n°",
+    "no",
+    "article",
+    "section",
+    "page",
+    "étape",
+    "etape",
 )
-WHITESPACE_RE = re.compile(r"\s+")
-# Marks where a quote elides text: "...", the ellipsis character, "[...]".
-ELLIPSIS_RE = re.compile(r"\[\s*(?:\.{3}|…)\s*\]|\.{3,}|…")
-# Quote pieces shorter than this are ignored beside a longer piece.
-MIN_QUOTE_PIECE_LENGTH = 8
+LABEL_BEFORE_RE = re.compile(
+    rf"(?:\b|(?<=n°))(?:{'|'.join(re.escape(w) for w in LABEL_WORDS)})"
+    r"\.?\s*$",
+    re.IGNORECASE,
+)
+ORDINAL_AFTER_RE = re.compile(r"(?:er|ère|e|ème|st|nd|rd|th)\b", re.IGNORECASE)
+BARE_YEAR_RE = re.compile(r"(?:19|20)\d{2}")
+BARE_INTEGER_RE = re.compile(r"\d+")
+# Document and invoice identifiers such as "doc_2692" or "F-2023-1084".
+IDENTIFIER_RE = re.compile(r"\b[a-z]+[_-]\d+(?:[_-]\d+)*\b", re.IGNORECASE)
 
 ISSUE_QUOTE_UNVERIFIED = (
     "quote for {doc_id} not found in its retrieved text: {quote!r}"

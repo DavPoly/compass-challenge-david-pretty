@@ -22,9 +22,11 @@ samples/
 # Verrou du Qdrant embarqué, traces et caches d'outils
 index/qdrant/.lock
 *.lock
-traces/
+/traces/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
 .cache/
 .claude/temp_worktree/
+/viewer/
+.playwright-mcp/
