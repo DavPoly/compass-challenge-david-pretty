@@ -1,7 +1,13 @@
 from archive.agent.answer_service import DraftOutcome
 from archive.agent.route.route_model import QuestionFamily, QuestionPlan
 from archive.common.chunk_model import Chunk, ChunkKind
-from archive.pipeline.trace_service import AnswerParts, build_trace
+from archive.common.step_model import PipelineStep, StepEvent
+from archive.pipeline.trace_model import QuestionTrace, StepRecord
+from archive.pipeline.trace_service import (
+    AnswerParts,
+    StepRecorder,
+    build_trace,
+)
 from archive.retrieval.search_service import SearchHit
 from archive.validation.answer_model import (
     AnswerStatus,
@@ -72,3 +78,43 @@ def test_trace_carries_stages_and_dedupes_chunks() -> None:
     assert trace.validation_issues == [str(issue)]
     assert trace.dropped_citations == ["x"]
     assert trace.elapsed_s == 2.0
+
+
+def test_trace_carries_the_recorded_steps() -> None:
+    steps = (
+        StepRecord(step=PipelineStep.ROUTE, detail="x", elapsed_s=0.1),
+        StepRecord(step=PipelineStep.GROUND, elapsed_s=0.4),
+    )
+    parts = AnswerParts(FinalAnswer.not_found("q1"), steps=steps)
+
+    trace = build_trace("run", QUESTION, parts, 1.0, None)
+
+    assert trace.steps == list(steps)
+
+
+def test_old_trace_json_without_steps_still_loads() -> None:
+    trace = build_trace(
+        "run", QUESTION, AnswerParts(FinalAnswer.not_found("q1")), 1.0, None
+    )
+    payload = trace.model_dump(mode="json")
+    del payload["steps"]
+
+    assert QuestionTrace.model_validate(payload).steps == []
+
+
+def test_recorder_forwards_events_and_times_them() -> None:
+    ticks = iter([5.0, 6.0, 8.5])
+    heard: list[StepEvent] = []
+    recorder = StepRecorder(heard.append, lambda: next(ticks))
+
+    recorder(StepEvent(PipelineStep.ROUTE))
+    recorder(StepEvent(PipelineStep.DRAFT, "brouillon 1"))
+
+    assert heard == [
+        StepEvent(PipelineStep.ROUTE),
+        StepEvent(PipelineStep.DRAFT, "brouillon 1"),
+    ]
+    assert [(r.step, r.elapsed_s) for r in recorder.records] == [
+        (PipelineStep.ROUTE, 1.0),
+        (PipelineStep.DRAFT, 3.5),
+    ]

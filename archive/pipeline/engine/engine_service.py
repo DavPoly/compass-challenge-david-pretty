@@ -2,7 +2,8 @@
 
 import contextlib
 import logging
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,7 +30,7 @@ from archive.pipeline.pipeline_constants import (
     MSG_INDEX_OPEN,
     MSG_NO_CORPUS,
 )
-from archive.pipeline.trace_service import AnswerParts
+from archive.pipeline.trace_service import AnswerParts, StepRecorder
 from archive.retrieval.models.embedding_gateway import (
     EmbeddingPort,
     load_embedder,
@@ -189,12 +190,14 @@ def answer_one(
     question: Question,
     engine: Engine,
     on_step: StepCallback | None = None,
+    clock: Callable[[], float] = time.monotonic,
 ) -> AnswerParts:
     """Answer one question: draft, validate and check grounding.
 
     An invalid question gets a not_found answer without any search.
     A failing grounding check is logged and leaves the report empty.
-    ``on_step`` also hears the validate and ground stages.
+    ``on_step`` also hears the validate and ground stages. Every step
+    is recorded in the returned parts, timed with ``clock``.
 
     Raises:
         LlmUnavailableError: the LLM could not give a valid draft.
@@ -202,14 +205,15 @@ def answer_one(
     if not question.is_valid:
         logger.warning(LOG_QUESTION_INVALID, question.id, question.error)
         return AnswerParts(FinalAnswer.not_found(question.id))
-    outcome = answer_question(question, engine.search, engine.llm, on_step)
+    recorder = StepRecorder(on_step, clock)
+    outcome = answer_question(question, engine.search, engine.llm, recorder)
     result = validate(
         question.id,
         outcome.draft,
         outcome.doc_ids,
         engine.valid_doc_ids,
     )
-    emit_step(on_step, PipelineStep.VALIDATE, result.answer.status.value)
+    emit_step(recorder, PipelineStep.VALIDATE, result.answer.status.value)
     for issue in result.issues:
         logger.info(LOG_QUESTION_ISSUE, question.id, issue)
     if result.dropped_citations:
@@ -219,7 +223,9 @@ def answer_one(
     report = None
     try:
         report = _log_grounding(question.id, outcome, result)
-        emit_step(on_step, PipelineStep.GROUND, str(report.confidence))
+        emit_step(recorder, PipelineStep.GROUND, str(report.confidence))
     except Exception:  # broad catch at a boundary: flag-only, never fatal
         logger.exception(LOG_GROUNDING_FAILED, question.id)
-    return AnswerParts(result.answer, outcome, result, report)
+    return AnswerParts(
+        result.answer, outcome, result, report, recorder.records
+    )

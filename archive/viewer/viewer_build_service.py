@@ -12,9 +12,14 @@ from typing import Literal, Protocol
 from pydantic import ValidationError
 
 from archive.common.constants import PDF_SUFFIX
+from archive.common.step_constants import STEP_LABELS
 from archive.pipeline.pipeline_constants import TRACE_SUFFIX
 from archive.pipeline.trace_gateway import trace_filename
-from archive.pipeline.trace_model import QuestionTrace, RetrievedChunk
+from archive.pipeline.trace_model import (
+    QuestionTrace,
+    RetrievedChunk,
+    StepRecord,
+)
 from archive.validation.answer_model import Evidence
 from archive.validation.answer_validator import normalize_doc_id
 from archive.viewer.viewer_constants import (
@@ -56,6 +61,7 @@ from archive.viewer.viewer_model import (
     QuestionView,
     RetrievedView,
     RunSummary,
+    StepView,
     ViewerData,
 )
 
@@ -297,7 +303,20 @@ def _question_view(
         retrieved=_retrieved_views(trace.retrieved),
         evidence=_evidence_views(trace, request),
         is_live=is_live,
+        steps=_step_views(trace.steps),
     )
+
+
+def _step_views(records: Iterable[StepRecord]) -> list[StepView]:
+    return [
+        StepView(
+            step=str(record.step),
+            label=STEP_LABELS.get(str(record.step), str(record.step)),
+            detail=record.detail,
+            elapsed_s=record.elapsed_s,
+        )
+        for record in records
+    ]
 
 
 def _retrieved_views(chunks: Iterable[RetrievedChunk]) -> list[RetrievedView]:

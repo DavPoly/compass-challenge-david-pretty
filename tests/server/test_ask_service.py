@@ -6,6 +6,7 @@ import pytest
 
 from archive.common.step_model import PipelineStep, StepEvent
 from archive.pipeline.engine.engine_service import Engine
+from archive.pipeline.trace_model import QuestionTrace, StepRecord
 from archive.pipeline.trace_service import AnswerParts
 from archive.server import ask_service
 from archive.server.ask_service import AskService, BusyError, next_live_id
@@ -43,7 +44,8 @@ def fake_answer(
     question: Question, engine: Engine, on_step: Any = None
 ) -> AnswerParts:
     on_step(StepEvent(PipelineStep.ROUTE, "factual"))
-    return AnswerParts(FinalAnswer.not_found(question.id))
+    steps = (StepRecord(step=PipelineStep.ROUTE, elapsed_s=0.5),)
+    return AnswerParts(FinalAnswer.not_found(question.id), steps=steps)
 
 
 @pytest.fixture(autouse=True)
@@ -157,3 +159,18 @@ def test_failed_trace_write_does_not_reuse_its_id(
     view = service.ask("Q2 ?", lambda event: None)
 
     assert view.id == "live-002"
+
+
+def test_live_trace_saves_steps_ending_with_render(tmp_path: Path) -> None:
+    view = make_service(tmp_path, [0.0, 2.0]).ask(
+        "Quelle date ?", lambda e: None
+    )
+
+    saved = QuestionTrace.model_validate_json(
+        (tmp_path / "live" / "live-001.json").read_text(encoding="utf-8")
+    )
+    assert [r.step for r in saved.steps] == [
+        PipelineStep.ROUTE,
+        PipelineStep.RENDER,
+    ]
+    assert [s.label for s in view.steps][0] == "Routage de la question"
