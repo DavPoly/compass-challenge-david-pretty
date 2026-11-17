@@ -33,6 +33,18 @@ JSON list of short strings.
 - Fill "evidence" with verbatim quotes (doc_id, quote, value), \
 "evidence_sufficient" with whether the quotes fully support the \
 answer, and "missing" with what is absent when they do not.
+- Partial chain: when the documents give only an intermediate fact (a \
+project code, a contract number, a person's name) but not the fact \
+asked, set "evidence_sufficient" to false and write in "missing" the \
+single next fact to look up, naming the entity (e.g. "email address \
+of Xavier Ricard in the staff directory", "subcontract contract for \
+project BRV-2023-14"). Use "evidence_sufficient" true with not_found \
+only when nothing in the documents points to where the answer could \
+be.
+- Chain citations: when the answer is reached through a chain of \
+documents (e.g. invoice, project sheet, staff directory), cite each \
+document of the chain that links the question to the answer, and \
+nothing else.
 """
 
 USER_PROMPT = """\
