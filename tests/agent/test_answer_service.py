@@ -88,6 +88,16 @@ def test_direct_path_retrieves_then_drafts(
     assert len(llm.calls) == 1
 
 
+def test_outcome_carries_the_question_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _plan_as(monkeypatch, QuestionFamily.DIRECT)
+
+    outcome = _run(FakeLlm())
+
+    assert outcome.plan == QuestionPlan(family=QuestionFamily.DIRECT)
+
+
 def test_recipe_returning_none_falls_back_to_direct(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

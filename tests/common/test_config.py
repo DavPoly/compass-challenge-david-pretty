@@ -15,6 +15,8 @@ def test_from_env_reads_variables() -> None:
     assert config.llm_model == "model"
     assert config.corpus_dir.name == "corpus"
     assert config.index_dir.name == "index"
+    assert config.traces_dir.name == "traces"
+    assert config.viewer_dir.name == "viewer"
 
 
 def test_missing_variables_are_all_listed() -> None:

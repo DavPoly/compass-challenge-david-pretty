@@ -9,6 +9,8 @@ ENV_LLM_MODEL = "LLM_MODEL"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CORPUS_DIR_NAME = "corpus"
 INDEX_DIR_NAME = "index"
+TRACES_DIR_NAME = "traces"
+VIEWER_DIR_NAME = "viewer"
 
 API_KEY_MASK = "***"
 

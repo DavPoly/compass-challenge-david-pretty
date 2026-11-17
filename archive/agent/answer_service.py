@@ -22,11 +22,12 @@ from archive.validation.input_model import Question
 
 @dataclass(frozen=True)
 class DraftOutcome:
-    """A draft with the hits it relied on and the recipe note."""
+    """A draft with its hits, the recipe note and the question plan."""
 
     draft: DraftAnswer
     hits: list[SearchHit]
     note: str | None
+    plan: QuestionPlan | None = None
 
     @property
     def doc_ids(self) -> set[str]:
@@ -58,13 +59,16 @@ def answer_question(
         else:
             result = RecipeResult(hits=hits)
     if result.draft is not None:
-        return DraftOutcome(result.draft, result.hits, result.note)
-    return _draft_with_safety_net(question, result, search, llm, started_s)
+        return DraftOutcome(result.draft, result.hits, result.note, plan)
+    return _draft_with_safety_net(
+        question, result, plan, search, llm, started_s
+    )
 
 
 def _draft_with_safety_net(  # noqa: PLR0913 - one value per input
     question: Question,
     result: RecipeResult,
+    plan: QuestionPlan,
     search: RecipeSearchPort,
     llm: LlmGateway,
     started_s: float,
@@ -85,7 +89,7 @@ def _draft_with_safety_net(  # noqa: PLR0913 - one value per input
     prompt_hits = result.hits[:MAX_PROMPT_CHUNKS]
     drafted = draft(question, prompt_hits, llm, note=result.note)
     if not needs_follow_up(drafted):
-        return DraftOutcome(drafted, prompt_hits, result.note)
+        return DraftOutcome(drafted, prompt_hits, result.note, plan)
     policy = replace(HopPolicy.safety_net(), started_s=started_s)
     hopped = run_hops(
         question,
@@ -97,7 +101,7 @@ def _draft_with_safety_net(  # noqa: PLR0913 - one value per input
         note=result.note,
     )
     final = hopped.draft if hopped.draft is not None else drafted
-    return DraftOutcome(final, prompt_hits + hopped.hits, result.note)
+    return DraftOutcome(final, prompt_hits + hopped.hits, result.note, plan)
 
 
 def _doc_ids(hits: list[SearchHit]) -> set[str]:
