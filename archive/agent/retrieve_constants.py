@@ -2,9 +2,9 @@
 
 from archive.common.chunk_model import DocType
 
-SEARCH_TOP_K = 8
+SEARCH_TOP_K = 16
 # Share of the k slots reserved for hits filtered on the hinted types.
-RETRIEVE_TYPED_SHARE = 0.5
+RETRIEVE_TYPED_SHARE = 0.75
 
 # Regex patterns matched on `normalize_for_match(question)` (lowercase,
 # no accents). Deliberately left out, because they cause false hints:

@@ -1,7 +1,6 @@
 """Constants for the run pipeline."""
 
 WORKER_COUNT = 8
-SEARCH_TOP_K = 8
 QUESTION_BUDGET_S = 60.0
 GLOBAL_DEADLINE_S = 17 * 60.0
 POLL_INTERVAL_S = 0.5
