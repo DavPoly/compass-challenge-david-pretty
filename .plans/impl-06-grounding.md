@@ -148,3 +148,8 @@ inline.
   tokens.
 - Result: 661 tests passing; ruff and mypy clean. The 45/45 sample run
   is still to be done by the user.
+- 2026-11-17: the sample run scored 45/45, with s04 and s17 falsely
+  rated low. Fix (`fix/grounding-partial`): quotes shortened with an
+  ellipsis are verified piece by piece in order. A whitespace-free
+  fallback match was added. Amounts or dates inside an answer item are
+  grounded when every one of them matches. 671 tests passing.
