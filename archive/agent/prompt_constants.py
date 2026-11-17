@@ -43,7 +43,9 @@ USER_PROMPT = """\
 Documents:
 {documents}
 
-Question: {question}
+{note}Question: {question}
 """
+
+NOTE_SECTION = "Note: {note}\n\n"
 
 NO_DOCUMENTS_MISSING = "no document matched the question"
