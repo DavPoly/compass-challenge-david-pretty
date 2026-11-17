@@ -1,6 +1,8 @@
 """Prompt text for the draft call."""
 
-MAX_PROMPT_CHUNKS = 8
+from archive.agent.retrieve_constants import SEARCH_TOP_K
+
+MAX_PROMPT_CHUNKS = SEARCH_TOP_K
 DOCUMENT_OPEN = '<document id="{doc_id}">'
 DOCUMENT_CLOSE = "</document>"
 DOCUMENT_TAG_PATTERN = r"<(/?)document"

@@ -1,5 +1,8 @@
+import math
+
 import pytest
 
+from archive.agent.retrieve_constants import RETRIEVE_TYPED_SHARE
 from archive.agent.retrieve_service import detect_doc_type_hints, retrieve
 from archive.common.chunk_model import Chunk, ChunkKind, DocType
 from archive.retrieval.search_service import SearchFilters, SearchHit
@@ -86,7 +89,11 @@ def test_typed_hits_come_first_then_unfiltered() -> None:
     hits = retrieve("la facture", search, 4)
 
     assert _doc_ids(hits) == ["t1", "t2", "a", "b"]
-    assert search.calls[0] == (SearchFilters(doc_types=["invoice"]), 2)
+    typed_slots = math.ceil(4 * RETRIEVE_TYPED_SHARE)
+    assert search.calls[0] == (
+        SearchFilters(doc_types=["invoice"]),
+        typed_slots,
+    )
 
 
 def test_typed_empty_falls_back_to_unfiltered() -> None:
