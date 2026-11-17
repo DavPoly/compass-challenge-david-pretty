@@ -1,6 +1,8 @@
 """Answer one question: plan, run a recipe or retrieve, then draft."""
 
 from archive.agent.draft_service import draft
+from archive.agent.hops.hop_model import HopPolicy
+from archive.agent.hops.hop_service import run_hops
 from archive.agent.prompt_constants import MAX_PROMPT_CHUNKS
 from archive.agent.recipes.aggregation_service import run_aggregation
 from archive.agent.recipes.recipe_model import RecipeResult, RecipeSearchPort
@@ -21,7 +23,8 @@ def answer_question(
     """Return the draft answer and the doc ids it was drafted from.
 
     On the draft path these are the hits that reached the prompt; a
-    recipe that drafts itself keeps all its hits.
+    recipe that drafts itself keeps all its hits. An insufficient
+    draft that names what is missing gets one safety-net hop.
 
     Raises:
         LlmUnavailableError: the LLM could not give a valid draft.
@@ -30,12 +33,42 @@ def answer_question(
     result = _run_recipe(question, plan, search, llm)
     if result is None:
         hits = retrieve(question.question, search, SEARCH_TOP_K)
-        result = RecipeResult(hits=hits)
+        if plan.family is QuestionFamily.MULTI_HOP:
+            result = run_hops(
+                question, hits, search, llm, HopPolicy.multi_hop()
+            )
+        else:
+            result = RecipeResult(hits=hits)
     if result.draft is not None:
         return result.draft, _doc_ids(result.hits)
+    return _draft_with_safety_net(question, result, search, llm)
+
+
+def _draft_with_safety_net(
+    question: Question,
+    result: RecipeResult,
+    search: RecipeSearchPort,
+    llm: LlmGateway,
+) -> tuple[DraftAnswer, set[str]]:
     prompt_hits = result.hits[:MAX_PROMPT_CHUNKS]
     drafted = draft(question, prompt_hits, llm, note=result.note)
-    return drafted, _doc_ids(prompt_hits)
+    if not _needs_safety_net(drafted):
+        return drafted, _doc_ids(prompt_hits)
+    hopped = run_hops(
+        question,
+        result.hits,
+        search,
+        llm,
+        HopPolicy.safety_net(),
+        first_draft=drafted,
+    )
+    final = hopped.draft if hopped.draft is not None else drafted
+    return final, _doc_ids(prompt_hits) | _doc_ids(hopped.hits)
+
+
+def _needs_safety_net(drafted: DraftAnswer) -> bool:
+    has_missing = bool(drafted.missing and drafted.missing.strip())
+    return not drafted.evidence_sufficient and has_missing
 
 
 def _doc_ids(hits: list[SearchHit]) -> set[str]:
