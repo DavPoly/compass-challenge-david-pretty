@@ -5,7 +5,6 @@ DEFAULT_GOLD_PARTS = ("samples", "gold.jsonl")
 ID_WIDTH = 6
 TYPE_WIDTH = 14
 FAMILY_WIDTH = 13
-UNANSWERABLE_TYPE = "unanswerable"
 GOLD_TYPE_TO_FAMILY = {
     "direct": "direct",
     "conflict": "direct",

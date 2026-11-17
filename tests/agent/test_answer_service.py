@@ -2,6 +2,7 @@ import pytest
 
 from archive.agent import answer_service
 from archive.agent.answer_service import answer_question
+from archive.agent.prompt_constants import MAX_PROMPT_CHUNKS
 from archive.agent.recipes.recipe_model import RecipeResult
 from archive.agent.route.route_model import QuestionFamily, QuestionPlan
 from archive.common.chunk_model import Chunk, ChunkKind
@@ -125,3 +126,30 @@ def test_recipe_note_reaches_the_prompt(
 
     assert retrieved_ids == {"doc_c"}
     assert "Note: v2 is in force" in llm.calls[0][1]["content"]
+
+
+def test_draft_path_ids_are_only_the_hits_in_the_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _plan_as(monkeypatch, QuestionFamily.DIRECT)
+    hits = [_hit(f"doc_{n:02d}") for n in range(MAX_PROMPT_CHUNKS + 3)]
+    monkeypatch.setattr(answer_service, "retrieve", lambda *args: hits)
+
+    _, retrieved_ids = _run(FakeLlm())
+
+    assert retrieved_ids == {f"doc_{n:02d}" for n in range(MAX_PROMPT_CHUNKS)}
+
+
+def test_recipe_with_its_own_draft_keeps_all_its_hits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _plan_as(monkeypatch, QuestionFamily.AGGREGATION)
+    hits = [_hit(f"inv_{n:02d}") for n in range(MAX_PROMPT_CHUNKS + 3)]
+    result = RecipeResult(hits=hits, draft=RECIPE_ANSWER)
+    monkeypatch.setattr(
+        answer_service, "run_aggregation", lambda *args: result
+    )
+
+    _, retrieved_ids = _run(FakeLlm())
+
+    assert len(retrieved_ids) == MAX_PROMPT_CHUNKS + 3

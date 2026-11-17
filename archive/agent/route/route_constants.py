@@ -17,12 +17,11 @@ MEASURE_DESCRIPTION = (
 )
 POLICY_TOPIC_DESCRIPTION = "Policy subject for superseded questions."
 
-QUESTION_OPEN = "<question>"
-QUESTION_CLOSE = "</question>"
-QUESTION_TAG_PATTERN = r"<(/?)question"
-# The doubled backslash survives the re.sub template: "<\question".
-QUESTION_TAG_ESCAPE = r"<\\question"
 ISO_DATE_PATTERN = r"(\d{4})-(\d{2})-(\d{2})"
+MAX_DAY_OF_MONTH = 31
+MSG_INVALID_DATE = (
+    "Route plan of question %s has an invalid date %r; falling back to direct"
+)
 MSG_PLAN_FALLBACK = (
     "Route plan unavailable for question %s; falling back to direct: %s"
 )
@@ -66,8 +65,4 @@ Plan: {"family": "superseded", "as_of_date": "2020-03-03", \
 "policy_topic": "politique de mobilite"}
 """
 
-USER_PROMPT = """\
-{open}
-{question}
-{close}
-"""
+USER_PROMPT = "{question}\n"
