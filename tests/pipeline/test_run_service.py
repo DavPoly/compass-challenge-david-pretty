@@ -5,6 +5,8 @@ import shutil
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -74,6 +76,8 @@ class StubContext:
     """Minimal run context: a stale question never reaches search."""
 
     deadline_s = QUESTION_BUDGET_S
+    run_id = ""
+    traces = None
 
     def clock(self) -> float:
         return 0.0
@@ -128,7 +132,9 @@ def indexed(
     build(corpus, index, BUILD_WORKERS)
     with SearchService.open(index) as service:
         text = service.list_by_filter(SearchFilters(), 1)[0].chunk.text
-    config = AppConfig("http://x", "secret", "model", corpus, index)
+    config = AppConfig(
+        "http://x", "secret", "model", corpus, index, root / "traces"
+    )
     return config, " ".join(text.split()[:QUERY_WORDS])
 
 
@@ -781,3 +787,151 @@ def test_hop_budget_runs_from_question_start_and_still_answers(
     assert read_answers(answers)["q1"]["status"] == "answered"
     assert llm.draft_count == 1
     assert clock.now_s <= QUESTION_BUDGET_S
+
+
+RUN_NOW = datetime(2026, 1, 2, 3, 4, 5)
+RUN_ID = "20260102-030405"
+
+
+def run_traced(
+    questions: Path, answers: Path, config: AppConfig, tmp_path: Path
+) -> tuple[int, Path]:
+    traced = replace(config, traces_dir=tmp_path / "traces")
+    fake = FakeClock()
+    code = run_service.run(
+        questions, answers, traced, fake.clock, fake.sleep, lambda: RUN_NOW
+    )
+    return code, tmp_path / "traces" / RUN_ID
+
+
+def read_traces(run_dir: Path) -> dict[str, dict[str, Any]]:
+    paths = sorted(run_dir.glob("*.json"))
+    traces = [json.loads(p.read_text(encoding="utf-8")) for p in paths]
+    return {trace["question_id"]: trace for trace in traces}
+
+
+def test_ok_question_trace_matches_the_answer_line(
+    indexed: tuple[AppConfig, str], fake_llm: FakeLlm, tmp_path: Path
+) -> None:
+    config, query = indexed
+    questions = write_questions(
+        tmp_path / "q.jsonl", [{"id": "q1", "question": query}]
+    )
+    answers = tmp_path / "a.jsonl"
+
+    code, run_dir = run_traced(questions, answers, config, tmp_path)
+
+    trace = read_traces(run_dir)["q1"]
+    assert code == EXIT_OK
+    assert trace["final"] == read_answers(answers)["q1"]
+    assert trace["run_id"] == RUN_ID
+    assert trace["question"] == query
+    assert trace["error"] is None
+    assert trace["plan"]["family"] == "direct"
+    assert trace["retrieved"]
+    assert trace["draft"]["answer"] == "42"
+    assert trace["grounding"] is not None
+    assert trace["dropped_citations"] == ["doc_unknown"]
+
+
+def test_invalid_question_gets_a_trace(
+    indexed: tuple[AppConfig, str], fake_llm: FakeLlm, tmp_path: Path
+) -> None:
+    config, _ = indexed
+    questions = write_questions(tmp_path / "q.jsonl", ["not json"])
+    answers = tmp_path / "a.jsonl"
+
+    _, run_dir = run_traced(questions, answers, config, tmp_path)
+
+    trace = read_traces(run_dir)["line-1"]
+    assert trace["final"] == read_answers(answers)["line-1"]
+    assert trace["error"]
+    assert trace["draft"] is None
+    assert fake_llm.call_count == 0
+
+
+def test_llm_error_trace_records_the_error(
+    indexed: tuple[AppConfig, str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    llm = FakeLlm(LlmUnavailableError("down"))
+    monkeypatch.setattr(run_service, "LlmGateway", lambda config: llm)
+    config, query = indexed
+    questions = write_questions(
+        tmp_path / "q.jsonl", [{"id": "q1", "question": query}]
+    )
+    answers = tmp_path / "a.jsonl"
+
+    _, run_dir = run_traced(questions, answers, config, tmp_path)
+
+    trace = read_traces(run_dir)["q1"]
+    assert trace["error"] == "down"
+    assert trace["final"] == read_answers(answers)["q1"]
+    assert trace["final"]["status"] == "not_found"
+
+
+def test_unexpected_error_trace_names_the_exception(
+    indexed: tuple[AppConfig, str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    llm = FakeLlm(RuntimeError("boom"))
+    monkeypatch.setattr(run_service, "LlmGateway", lambda config: llm)
+    config, query = indexed
+    questions = write_questions(
+        tmp_path / "q.jsonl", [{"id": "q1", "question": query}]
+    )
+    answers = tmp_path / "a.jsonl"
+
+    _, run_dir = run_traced(questions, answers, config, tmp_path)
+
+    trace = read_traces(run_dir)["q1"]
+    assert trace["error"] == "RuntimeError: boom"
+    assert trace["final"] == read_answers(answers)["q1"]
+
+
+def test_unwritable_trace_dir_keeps_answers_and_exit_code(
+    indexed: tuple[AppConfig, str],
+    fake_llm: FakeLlm,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    config, query = indexed
+    blocker = tmp_path / "blocker"
+    blocker.write_text("x", encoding="utf-8")
+    config = replace(config, traces_dir=blocker)
+    questions = write_questions(
+        tmp_path / "q.jsonl",
+        [{"id": "q1", "question": query}, {"id": "q2", "question": query}],
+    )
+    answers = tmp_path / "a.jsonl"
+
+    code, _ = run_with_clock(questions, answers, config)
+
+    assert code == EXIT_OK
+    assert set(read_answers(answers)) == {"q1", "q2"}
+    assert "trace not written" in caplog.text
+
+
+def test_trace_building_failure_never_reaches_the_answer(
+    indexed: tuple[AppConfig, str],
+    fake_llm: FakeLlm,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def explode(*_args: object) -> None:
+        raise ValueError("bad trace")
+
+    monkeypatch.setattr(run_service, "build_trace", explode)
+    config, query = indexed
+    questions = write_questions(
+        tmp_path / "q.jsonl", [{"id": "q1", "question": query}]
+    )
+    answers = tmp_path / "a.jsonl"
+
+    code, run_dir = run_traced(questions, answers, config, tmp_path)
+
+    assert code == EXIT_OK
+    assert read_answers(answers)["q1"]["status"] == "answered"
+    assert not run_dir.exists()

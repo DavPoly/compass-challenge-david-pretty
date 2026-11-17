@@ -6,6 +6,7 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import TextIO
 
@@ -34,6 +35,7 @@ from archive.pipeline.pipeline_constants import (
     LOG_QUESTION_ISSUE,
     LOG_SYNC_FAILED,
     LOG_SYNC_REPORT,
+    LOG_TRACE_WRITE_FAILED,
     LOG_UNEXPECTED_ERROR,
     MODEL_LOAD_WORKERS,
     MSG_INDEX_OPEN,
@@ -43,6 +45,8 @@ from archive.pipeline.pipeline_constants import (
     QUESTION_BUDGET_S,
     WORKER_COUNT,
 )
+from archive.pipeline.trace_gateway import TraceWriter, new_run_id
+from archive.pipeline.trace_service import AnswerParts, build_trace
 from archive.retrieval.models.embedding_gateway import (
     EmbeddingPort,
     load_embedder,
@@ -56,7 +60,10 @@ from archive.retrieval.qdrant.qdrant_gateway import IndexOpenError
 from archive.retrieval.search_service import SearchService
 from archive.validation.answer_model import FinalAnswer
 from archive.validation.answer_validator import ValidationResult, validate
-from archive.validation.grounding.grounding_model import GroundingSources
+from archive.validation.grounding.grounding_model import (
+    GroundingReport,
+    GroundingSources,
+)
 from archive.validation.grounding.grounding_service import check_grounding
 from archive.validation.input_model import (
     Question,
@@ -77,6 +84,8 @@ class RunContext:
     deadline_s: float
     clock: Callable[[], float]
     sleep: Callable[[float], None]
+    run_id: str = ""
+    traces: TraceWriter | None = None
 
 
 class StartTimes:
@@ -121,10 +130,10 @@ class AnswerWriter:
             return question_id in self._written_ids
 
 
-def _answer_question(question: Question, context: RunContext) -> FinalAnswer:
+def _answer_question(question: Question, context: RunContext) -> AnswerParts:
     if not question.is_valid:
         logger.warning(LOG_QUESTION_INVALID, question.id, question.error)
-        return FinalAnswer.not_found(question.id)
+        return AnswerParts(FinalAnswer.not_found(question.id))
     outcome = answer_question(question, context.search, context.llm)
     result = validate(
         question.id,
@@ -138,16 +147,17 @@ def _answer_question(question: Question, context: RunContext) -> FinalAnswer:
         logger.warning(
             LOG_DROPPED_CITATIONS, question.id, result.dropped_citations
         )
+    report = None
     try:
-        _log_grounding(question.id, outcome, result)
+        report = _log_grounding(question.id, outcome, result)
     except Exception:  # broad catch at a boundary: flag-only, never fatal
         logger.exception(LOG_GROUNDING_FAILED, question.id)
-    return result.answer
+    return AnswerParts(result.answer, outcome, result, report)
 
 
 def _log_grounding(
     question_id: str, outcome: DraftOutcome, result: ValidationResult
-) -> None:
+) -> GroundingReport:
     report = check_grounding(
         outcome.draft,
         GroundingSources.from_hits(outcome.hits, outcome.note),
@@ -156,6 +166,25 @@ def _log_grounding(
     for issue in report.issues:
         logger.info(LOG_QUESTION_ISSUE, question_id, issue)
     logger.info(LOG_GROUNDING_CONFIDENCE, question_id, report.confidence)
+    return report
+
+
+def _record_trace(
+    question: Question,
+    parts: AnswerParts,
+    context: RunContext,
+    started_s: float,
+    error: str | None,
+) -> None:
+    """Write the question trace; never raises, never alters answers."""
+    if context.traces is None:
+        return
+    try:
+        elapsed_s = context.clock() - started_s
+        trace = build_trace(context.run_id, question, parts, elapsed_s, error)
+        context.traces.write(trace)
+    except Exception:  # broad catch at a boundary: traces are optional
+        logger.warning(LOG_TRACE_WRITE_FAILED, question.id, exc_info=True)
 
 
 def _work(
@@ -166,19 +195,24 @@ def _work(
 ) -> None:
     if context.clock() >= context.deadline_s:
         return
-    starts.mark(question.id, context.clock())
+    started_s = context.clock()
+    starts.mark(question.id, started_s)
+    error = question.error
     try:
-        answer = _answer_question(question, context)
-    except LlmUnavailableError as error:
-        logger.error(LOG_LLM_UNAVAILABLE, question.id, error)
-        answer = FinalAnswer.not_found(question.id)
-    except Exception:
+        parts = _answer_question(question, context)
+    except LlmUnavailableError as llm_error:
+        logger.error(LOG_LLM_UNAVAILABLE, question.id, llm_error)
+        parts = AnswerParts(FinalAnswer.not_found(question.id))
+        error = str(llm_error)
+    except Exception as unexpected:
         # A single question must never kill the run: any unexpected
         # failure degrades to not_found and keeps the traceback in logs.
         logger.exception(LOG_UNEXPECTED_ERROR, question.id)
-        answer = FinalAnswer.not_found(question.id)
+        parts = AnswerParts(FinalAnswer.not_found(question.id))
+        error = f"{type(unexpected).__name__}: {unexpected}"
+    _record_trace(question, parts, context, started_s, error)
     try:
-        written = writer.write(answer)
+        written = writer.write(parts.answer)
     except Exception:
         # Late results are discarded by design: the run may already be
         # tearing down, so a closed answers file must not kill the
@@ -309,18 +343,20 @@ def _sync_index_or_continue(
     )
 
 
-def run(
+def run(  # noqa: PLR0913, PLR0917 - injectable time sources
     questions_path: Path,
     answers_path: Path,
     config: AppConfig,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
+    now: Callable[[], datetime] = datetime.now,
 ) -> int:
     """Answer every question and write answers.jsonl.
 
     One line is written per question as soon as it is ready; a question
     that fails, exceeds its time budget or is cut by the global deadline
-    gets a not_found line.
+    gets a not_found line. A JSON trace per question is written to
+    ``config.traces_dir/<run_id>/`` on a best-effort basis.
 
     Returns:
         0 on a completed run (even with not_found answers), 1 when the
@@ -328,6 +364,7 @@ def run(
         reason is logged as an error.
     """
     deadline_s = clock() + GLOBAL_DEADLINE_S
+    run_id = new_run_id(now())
     if not _has_pdfs(config.corpus_dir):
         logger.error(MSG_NO_CORPUS.format(path=config.corpus_dir))
         return EXIT_ERROR
@@ -354,6 +391,8 @@ def run(
                 deadline_s,
                 clock,
                 sleep,
+                run_id,
+                TraceWriter(config.traces_dir / run_id),
             )
             with answers_path.open(
                 "w", encoding=ANSWERS_ENCODING, newline="\n"

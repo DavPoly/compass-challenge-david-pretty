@@ -65,7 +65,7 @@ def answer_question(
     )
 
 
-def _draft_with_safety_net(  # noqa: PLR0913 - one value per input
+def _draft_with_safety_net(  # noqa: PLR0913, PLR0917 - one value per input
     question: Question,
     result: RecipeResult,
     plan: QuestionPlan,
