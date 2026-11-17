@@ -1,9 +1,9 @@
 # Plan: step 02, ingest quality and retrieval depth (`impl-02-ingest-quality`)
 
-**Status:** in-progress
+**Status:** done
 **Parent:** `.plans/impl-00-roadmap.md` step 02, `.plans/global-architecture.md` §1
 **BASE:** `59a79fc618692ee90f82cf2af424f1bbdfed5a05`
-**Subagent branches:** refactor/ingest-layout (T0, merged aee336d), feat/table-render (T1), feat/doc-metadata (T2), feat/index-sync (T3), feat/retrieve-hints (T4), feat/integrate-retrieve (T5), fix/sync-robustness, fix/metadata-false-matches, fix/script-quality (review round 1), chore/rebuild-index-2
+**Subagent branches:** refactor/ingest-layout (T0, merged aee336d), feat/table-render (T1), feat/doc-metadata (T2), feat/index-sync (T3), feat/retrieve-hints (T4), feat/integrate-retrieve (T5), fix/sync-robustness, fix/metadata-false-matches, fix/script-quality (review round 1), chore/rebuild-index-2, fix/review-round-2
 **Orchestrator branch B:** `feat/ingest-quality`, cut from `main` @ 59a79fc
 
 ## Context
@@ -286,3 +286,24 @@ After the final merge, `pre-commit-review` (`reviewer` + `quality`) runs on
   "bulletin"; no such doc in the corpus). check_tables reuses
   detect_doc_type: directory 2/2 (only 2 directory docs), invoice sum
   10/10. `scripts/__init__.py` added (mypy duplicate-module error).
+- 2026-11-16 (rebuild 2): 3,048 docs, 3,050 chunks, 0 failures, 64.9 s;
+  doc_0846 → memo; no separator-only table lines; recall @8 0.67,
+  @16 0.79, @24 0.79. Merged 54a3291.
+- 2026-11-16 (V re-run by the user, on the pre-rebuild index): 33.16/45
+  — same 11/16 answers; s04 cited 1 of its 2 gold docs (LLM variance).
+  The 13.1 s no-op sync was CPU contention with the parallel rebuild.
+- 2026-11-16 (review round 2): 1 MAJOR (check_tables missed pdfplumber's
+  PdfminerException), fixed with a test; dead `noqa` removed; extra
+  regression tests ("marh 2023", single-word title typo → UNKNOWN,
+  documenting the recall trade-off). Accepted: `\w` lookbehind rejects
+  OCR-glued dates ("le12/03/2024"); series cap warns at == cap; a
+  string `citations` in gold is not rejected (manual script). 412 tests.
+
+## Resume point (2026-11-16, step done)
+
+Step 02 merged on `feat/ingest-quality`: 412 tests, ruff + format +
+mypy --strict green, scored 33.30/45 (baseline 26.60). Nothing pushed;
+`main` not updated. Next: merge `feat/ingest-quality` into `main`
+(and push on explicit approval), then step 03 (dense + rerank) or
+step 04 (router/recipes). Remaining misses target 04/05: s01
+superseded-by-date, s20 aggregation, s05/s08/s15 multi_hop second hop.
