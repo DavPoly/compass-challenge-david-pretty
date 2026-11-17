@@ -272,3 +272,5 @@ decisions log, and the roadmap's decision to drop the classifier).
   (4/4), citations 3.82/5. direct, aggregation, superseded, conflict,
   unanswerable all 100%; multi_hop 0/4 (s04/s05/s08/s15, step 05).
   Questions phase ~14 s for 20 questions.
+- Review fix round 1: `fix/agg-review` (aggregation), `fix/prompt-route-review`
+  (delimiters, route dates, superseded).
