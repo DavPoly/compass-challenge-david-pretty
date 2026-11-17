@@ -10,6 +10,7 @@ from pathlib import Path
 from archive.agent.answer_service import DraftOutcome, answer_question
 from archive.common.config import AppConfig
 from archive.common.constants import PDF_GLOB
+from archive.common.step_model import PipelineStep, StepCallback, emit_step
 from archive.ingest.build.index_sync_service import sync_index
 from archive.llm.llm_gateway import LlmGateway
 from archive.pipeline.pipeline_constants import (
@@ -157,11 +158,16 @@ def _log_grounding(
     return report
 
 
-def answer_one(question: Question, engine: Engine) -> AnswerParts:
+def answer_one(
+    question: Question,
+    engine: Engine,
+    on_step: StepCallback | None = None,
+) -> AnswerParts:
     """Answer one question: draft, validate and check grounding.
 
     An invalid question gets a not_found answer without any search.
     A failing grounding check is logged and leaves the report empty.
+    ``on_step`` also hears the validate and ground stages.
 
     Raises:
         LlmUnavailableError: the LLM could not give a valid draft.
@@ -169,13 +175,14 @@ def answer_one(question: Question, engine: Engine) -> AnswerParts:
     if not question.is_valid:
         logger.warning(LOG_QUESTION_INVALID, question.id, question.error)
         return AnswerParts(FinalAnswer.not_found(question.id))
-    outcome = answer_question(question, engine.search, engine.llm)
+    outcome = answer_question(question, engine.search, engine.llm, on_step)
     result = validate(
         question.id,
         outcome.draft,
         outcome.doc_ids,
         engine.valid_doc_ids,
     )
+    emit_step(on_step, PipelineStep.VALIDATE, result.answer.status.value)
     for issue in result.issues:
         logger.info(LOG_QUESTION_ISSUE, question.id, issue)
     if result.dropped_citations:
@@ -185,6 +192,7 @@ def answer_one(question: Question, engine: Engine) -> AnswerParts:
     report = None
     try:
         report = _log_grounding(question.id, outcome, result)
+        emit_step(on_step, PipelineStep.GROUND, str(report.confidence))
     except Exception:  # broad catch at a boundary: flag-only, never fatal
         logger.exception(LOG_GROUNDING_FAILED, question.id)
     return AnswerParts(result.answer, outcome, result, report)
