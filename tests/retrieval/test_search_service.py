@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from archive.common.chunk_model import Chunk, ChunkKind
-from archive.ingest.index_builder_service import ManifestError
+from archive.ingest.build.manifest_gateway import ManifestError
 from archive.retrieval import search_service
 from archive.retrieval.qdrant_constants import (
     FIELD_DOC_DATE,

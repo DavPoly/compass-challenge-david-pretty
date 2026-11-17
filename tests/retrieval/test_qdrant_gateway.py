@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -5,6 +6,7 @@ import pytest
 from qdrant_client import models
 
 from archive.common.chunk_model import Chunk, ChunkKind
+from archive.retrieval import qdrant_gateway
 from archive.retrieval.qdrant_constants import SPARSE_VECTOR_NAME
 from archive.retrieval.qdrant_gateway import (
     IndexOpenError,
@@ -99,6 +101,50 @@ def test_upsert_same_chunk_id_replaces(gateway: QdrantGateway) -> None:
     gateway.upsert([make_chunk("a#0", "new")])
     chunks = gateway.scroll(None, 10)
     assert [chunk.text for chunk in chunks] == ["new"]
+
+
+def test_delete_docs_removes_all_chunks_of_those_docs(
+    gateway: QdrantGateway,
+) -> None:
+    gateway.upsert(
+        [
+            make_chunk("a#0", "one"),
+            make_chunk("a#1", "two"),
+            make_chunk("b#0", "three"),
+            make_chunk("c#0", "four"),
+        ]
+    )
+    gateway.delete_docs({"a", "c", "missing"})
+    assert [c.chunk_id for c in gateway.scroll(None, 10)] == ["b#0"]
+
+
+def test_delete_docs_with_no_ids_is_a_noop(gateway: QdrantGateway) -> None:
+    gateway.upsert([make_chunk("a#0", "one")])
+    gateway.delete_docs([])
+    assert len(gateway.scroll(None, 10)) == 1
+
+
+def test_scroll_series_returns_only_series_chunks(
+    gateway: QdrantGateway,
+) -> None:
+    versioned = make_chunk("a#0", "policy", "policy")
+    versioned.series = "leave"
+    gateway.upsert([versioned, make_chunk("b#0", "invoice")])
+    assert [c.chunk_id for c in gateway.scroll_series()] == ["a#0"]
+
+
+def test_scroll_series_warns_when_the_cap_is_reached(
+    gateway: QdrantGateway,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    versioned = make_chunk("a#0", "policy", "policy")
+    versioned.series = "leave"
+    gateway.upsert([versioned])
+    monkeypatch.setattr(qdrant_gateway, "SERIES_SCROLL_CAP", 1)
+    with caplog.at_level(logging.WARNING):
+        gateway.scroll_series()
+    assert "chunk cap" in caplog.text
 
 
 def test_open_locked_index_raises(tmp_path: Path) -> None:

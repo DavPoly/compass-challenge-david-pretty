@@ -1,7 +1,5 @@
 """Build the committed index: parse PDFs, chunk, upsert, manifest."""
 
-import hashlib
-import json
 import logging
 import shutil
 import time
@@ -9,39 +7,34 @@ from collections.abc import Iterator
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypedDict
 
 from archive.common.chunk_model import Chunk
 from archive.common.constants import PDF_GLOB
-from archive.ingest.chunking_service import chunk_document
-from archive.ingest.ingest_constants import (
+from archive.ingest.build.build_constants import (
     BUILD_FLUSH_CHUNKS,
     BUILD_MAP_CHUNKSIZE,
-    FILE_HASH_BLOCK_BYTES,
     MANIFEST_FILE_NAME,
-    MANIFEST_INDENT,
 )
-from archive.ingest.metadata_service import extract_metadata
-from archive.ingest.pdf_parse_gateway import PdfParseError, parse_pdf
+from archive.ingest.build.manifest_gateway import (
+    ManifestEntry,
+    file_entry,
+    write_manifest,
+)
+from archive.ingest.build.version_series_utils import with_effective_to
+from archive.ingest.chunking_service import chunk_document
+from archive.ingest.metadata.metadata_service import extract_metadata
+from archive.ingest.parse.pdf_parse_gateway import (
+    PdfParseError,
+    parse_pdf,
+)
 from archive.retrieval.qdrant_constants import QDRANT_SUBDIR
 from archive.retrieval.qdrant_gateway import QdrantGateway
 
 logger = logging.getLogger(__name__)
 
 
-class ManifestError(Exception):
-    """Raised when the index manifest is missing or invalid."""
-
-
 class IndexBuildError(Exception):
     """Raised when the previous index cannot be cleared for a rebuild."""
-
-
-class ManifestEntry(TypedDict):
-    """Size in bytes and SHA-1 of an indexed PDF."""
-
-    size: int
-    sha1: str
 
 
 @dataclass(frozen=True)
@@ -55,7 +48,7 @@ class BuildReport:
 
 
 @dataclass(frozen=True)
-class _ParsedFile:
+class ParsedFile:
     """Worker result: chunks and manifest entry, or the parse error."""
 
     doc_id: str
@@ -97,21 +90,25 @@ def build(
     try:
         gateway.ensure_collection()
         buffer: list[Chunk] = []
-        for parsed in _parse_all(paths, workers):
+        series_chunks: list[Chunk] = []
+        for parsed in parse_all(paths, workers):
             if parsed.entry is None:
                 failed.append(parsed.doc_id)
                 logger.warning("skipped %s: %s", parsed.doc_id, parsed.error)
                 continue
             manifest[parsed.doc_id] = parsed.entry
-            buffer.extend(parsed.chunks)
+            for chunk in parsed.chunks:
+                is_series = chunk.series is not None
+                (series_chunks if is_series else buffer).append(chunk)
             chunk_count += len(parsed.chunks)
             if len(buffer) >= BUILD_FLUSH_CHUNKS:
                 gateway.upsert(buffer)
                 buffer = []
         gateway.upsert(buffer)
+        gateway.upsert(with_effective_to(series_chunks))
     finally:
         gateway.close()
-    _write_manifest(index_dir, manifest)
+    write_manifest(index_dir, manifest)
     return BuildReport(
         docs=len(manifest),
         chunks=chunk_count,
@@ -134,59 +131,24 @@ def _clear_previous_index(index_dir: Path) -> None:
         ) from error
 
 
-def load_manifest(index_dir: Path) -> dict[str, ManifestEntry]:
-    """Read `<index_dir>/manifest.json`.
-
-    Raises:
-        ManifestError: if the file is missing or not valid JSON.
-    """
-    path = index_dir / MANIFEST_FILE_NAME
-    try:
-        content = path.read_text(encoding="utf-8")
-        manifest: dict[str, ManifestEntry] = json.loads(content)
-    except (OSError, ValueError) as error:
-        raise ManifestError(
-            f"Cannot read the index manifest {path}: {error}. Build the "
-            "index with scripts/build_index.py."
-        ) from error
-    return manifest
-
-
-def _write_manifest(
-    index_dir: Path, manifest: dict[str, ManifestEntry]
-) -> None:
-    index_dir.mkdir(parents=True, exist_ok=True)
-    (index_dir / MANIFEST_FILE_NAME).write_text(
-        json.dumps(manifest, sort_keys=True, indent=MANIFEST_INDENT) + "\n",
-        encoding="utf-8",
-    )
-
-
-def _parse_all(
-    paths: list[Path], workers: int | None
-) -> Iterator[_ParsedFile]:
+def parse_all(paths: list[Path], workers: int | None) -> Iterator[ParsedFile]:
+    """Parse PDFs in worker processes, yielding results in path order."""
+    if not paths:
+        return
     with ProcessPoolExecutor(max_workers=workers) as executor:
         yield from executor.map(
-            _parse_file, paths, chunksize=BUILD_MAP_CHUNKSIZE
+            parse_file, paths, chunksize=BUILD_MAP_CHUNKSIZE
         )
 
 
-def _parse_file(path: Path) -> _ParsedFile:
+def parse_file(path: Path) -> ParsedFile:
     """Worker: parse, extract metadata and chunk one PDF."""
     try:
         doc = parse_pdf(path)
         chunks = chunk_document(doc, extract_metadata(doc))
     except PdfParseError as error:
-        return _ParsedFile(path.stem, None, [], str(error))
+        return ParsedFile(path.stem, None, [], str(error))
     except Exception as error:  # any worker failure must not abort the build
         message = f"{type(error).__name__}: {error}"
-        return _ParsedFile(path.stem, None, [], message)
-    return _ParsedFile(path.stem, _file_entry(path), chunks, None)
-
-
-def _file_entry(path: Path) -> ManifestEntry:
-    digest = hashlib.sha1(usedforsecurity=False)
-    with path.open("rb") as handle:
-        while block := handle.read(FILE_HASH_BLOCK_BYTES):
-            digest.update(block)
-    return ManifestEntry(size=path.stat().st_size, sha1=digest.hexdigest())
+        return ParsedFile(path.stem, None, [], message)
+    return ParsedFile(path.stem, file_entry(path), chunks, None)

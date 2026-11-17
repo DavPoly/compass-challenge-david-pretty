@@ -1,7 +1,6 @@
 """Constants for the run pipeline."""
 
 WORKER_COUNT = 8
-SEARCH_TOP_K = 8
 QUESTION_BUDGET_S = 60.0
 GLOBAL_DEADLINE_S = 17 * 60.0
 POLL_INTERVAL_S = 0.5
@@ -30,3 +29,7 @@ LOG_UNEXPECTED_ERROR = "question %s: unexpected error"
 LOG_LATE_RESULT = "question %s: late result discarded"
 LOG_OVER_BUDGET = "question %s: over %.0f s budget, not_found"
 LOG_DEADLINE_REACHED = "question %s: global deadline reached, not_found"
+LOG_SYNC_FAILED = "index sync failed, using the existing index"
+LOG_SYNC_REPORT = (
+    "index sync: %d added, %d changed, %d removed, %d failed in %.1f s"
+)

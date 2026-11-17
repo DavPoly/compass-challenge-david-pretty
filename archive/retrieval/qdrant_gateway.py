@@ -1,8 +1,9 @@
 """Embedded Qdrant access: sparse (BM25-style) indexing and search."""
 
+import logging
 import threading
 import warnings
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from pathlib import Path
 
 from qdrant_client import QdrantClient, models
@@ -11,14 +12,20 @@ from archive.common.chunk_model import Chunk
 from archive.retrieval.qdrant_constants import (
     BUILD_HINT,
     COLLECTION_NAME,
+    FIELD_DOC_ID,
+    FIELD_SERIES,
     KEYWORD_PAYLOAD_FIELDS,
+    LOG_SERIES_CAP_REACHED,
     OPEN_FAILURE_HINT,
     QDRANT_SUBDIR,
     SCROLL_PAGE_SIZE,
+    SERIES_SCROLL_CAP,
     SPARSE_VECTOR_NAME,
     UPSERT_BATCH_SIZE,
 )
 from archive.retrieval.sparse_encoding_utils import point_id, sparse_vector
+
+logger = logging.getLogger(__name__)
 
 
 class IndexOpenError(Exception):
@@ -109,6 +116,25 @@ class QdrantGateway:
                     points=[self._to_point(chunk) for chunk in batch],
                 )
 
+    def delete_docs(self, doc_ids: Collection[str]) -> None:
+        """Delete every chunk of the given documents; no-op if empty."""
+        if not doc_ids:
+            return
+        with self._write_lock:
+            self._client.delete(
+                COLLECTION_NAME,
+                points_selector=models.FilterSelector(
+                    filter=models.Filter(
+                        must=[
+                            models.FieldCondition(
+                                key=FIELD_DOC_ID,
+                                match=models.MatchAny(any=list(doc_ids)),
+                            )
+                        ]
+                    )
+                ),
+            )
+
     def query_sparse(
         self,
         vector: models.SparseVector,
@@ -146,6 +172,20 @@ class QdrantGateway:
             chunks.extend(Chunk.model_validate(p.payload) for p in points)
             if not points or offset is None:
                 break
+        return chunks
+
+    def scroll_series(self) -> list[Chunk]:
+        """Return every chunk that belongs to a version series."""
+        has_series = models.Filter(
+            must_not=[
+                models.IsNullCondition(
+                    is_null=models.PayloadField(key=FIELD_SERIES)
+                )
+            ]
+        )
+        chunks = self.scroll(has_series, SERIES_SCROLL_CAP)
+        if len(chunks) >= SERIES_SCROLL_CAP:
+            logger.warning(LOG_SERIES_CAP_REACHED, SERIES_SCROLL_CAP)
         return chunks
 
     def close(self) -> None:

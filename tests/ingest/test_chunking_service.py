@@ -2,8 +2,8 @@
 
 from archive.common.chunk_model import Chunk, ChunkKind
 from archive.ingest.chunking_service import chunk_document
-from archive.ingest.metadata_service import DocMetadata
-from archive.ingest.pdf_parse_gateway import ParsedDoc
+from archive.ingest.metadata.metadata_service import DocMetadata
+from archive.ingest.parse.pdf_parse_gateway import ParsedDoc
 
 METADATA = DocMetadata(
     doc_type="unknown",
@@ -106,3 +106,24 @@ def test_chunk_identifiers_are_independent_copies() -> None:
 
     assert METADATA.identifiers == ["BRV-2023-06"]
     assert chunks[1].identifiers == ["BRV-2023-06"]
+
+
+def test_version_fields_are_copied_onto_every_chunk() -> None:
+    metadata = DocMetadata(
+        doc_type="policy",
+        doc_date="2024-05-26",
+        identifiers=[],
+        lang="fr",
+        version="3",
+        effective_from="2024-05-26",
+        series="politique de teletravail",
+    )
+
+    chunks = chunk_document(ParsedDoc("doc_1", [_words(1000)]), metadata)
+
+    assert len(chunks) > 1
+    for chunk in chunks:
+        assert chunk.version == "3"
+        assert chunk.effective_from == "2024-05-26"
+        assert chunk.series == "politique de teletravail"
+        assert chunk.effective_to is None

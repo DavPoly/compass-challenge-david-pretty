@@ -10,9 +10,12 @@ from pathlib import Path
 from typing import TextIO
 
 from archive.agent.draft_service import draft
+from archive.agent.retrieve_constants import SEARCH_TOP_K
+from archive.agent.retrieve_service import retrieve
 from archive.common.config import AppConfig
 from archive.common.constants import PDF_GLOB
-from archive.ingest.index_builder_service import ManifestError
+from archive.ingest.build.index_sync_service import sync_index
+from archive.ingest.build.manifest_gateway import ManifestError
 from archive.llm.llm_gateway import LlmGateway, LlmUnavailableError
 from archive.pipeline.pipeline_constants import (
     ANSWERS_ENCODING,
@@ -27,13 +30,14 @@ from archive.pipeline.pipeline_constants import (
     LOG_OVER_BUDGET,
     LOG_QUESTION_INVALID,
     LOG_QUESTION_ISSUE,
+    LOG_SYNC_FAILED,
+    LOG_SYNC_REPORT,
     LOG_UNEXPECTED_ERROR,
     MSG_INDEX_OPEN,
     MSG_IO_ERROR,
     MSG_NO_CORPUS,
     POLL_INTERVAL_S,
     QUESTION_BUDGET_S,
-    SEARCH_TOP_K,
     WORKER_COUNT,
 )
 from archive.retrieval.qdrant_gateway import IndexOpenError
@@ -107,7 +111,7 @@ def _answer_question(question: Question, context: RunContext) -> FinalAnswer:
     if not question.is_valid:
         logger.warning(LOG_QUESTION_INVALID, question.id, question.error)
         return FinalAnswer.not_found(question.id)
-    hits = context.search.hybrid_search(question.question, None, SEARCH_TOP_K)
+    hits = retrieve(question.question, context.search, SEARCH_TOP_K)
     retrieved_ids = {hit.chunk.doc_id for hit in hits}
     result = validate(
         question.id,
@@ -225,6 +229,31 @@ def _valid_doc_ids(search: SearchService, corpus_dir: Path) -> frozenset[str]:
     return valid
 
 
+def _sync_index_or_continue(config: AppConfig) -> None:
+    """Sync the index with the corpus; a failure is logged, not fatal.
+
+    The full-build fallback only runs when the index is already
+    unusable, so a failed sync never replaces a usable index.
+    """
+    try:
+        report = sync_index(config.corpus_dir, config.index_dir)
+    except Exception:
+        # Best effort: any failure (pool, Qdrant, validation) must not
+        # stop the run, the existing index is still usable. A
+        # mid-sync failure may leave some docs missing for this
+        # run; the next sync re-adds them.
+        logger.exception(LOG_SYNC_FAILED)
+        return
+    logger.info(
+        LOG_SYNC_REPORT,
+        len(report.added),
+        len(report.changed),
+        len(report.removed),
+        len(report.failed),
+        report.seconds,
+    )
+
+
 def run(
     questions_path: Path,
     answers_path: Path,
@@ -252,6 +281,7 @@ def run(
     except QuestionsFileError as error:
         logger.error("%s", error)
         return EXIT_ERROR
+    _sync_index_or_continue(config)
     try:
         search = SearchService.open(config.index_dir)
     except (IndexOpenError, ManifestError) as error:

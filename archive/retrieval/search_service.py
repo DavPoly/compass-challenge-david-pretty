@@ -13,8 +13,8 @@ from types import TracebackType
 from qdrant_client import models
 
 from archive.common.chunk_model import Chunk
-from archive.ingest.index_builder_service import load_manifest
-from archive.ingest.metadata_service import extract_identifiers
+from archive.ingest.build.manifest_gateway import load_manifest
+from archive.ingest.metadata.metadata_service import extract_identifiers
 from archive.retrieval.qdrant_constants import (
     FIELD_DOC_DATE,
     FIELD_DOC_TYPE,
