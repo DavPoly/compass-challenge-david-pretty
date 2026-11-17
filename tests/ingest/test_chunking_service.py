@@ -2,8 +2,8 @@
 
 from archive.common.chunk_model import Chunk, ChunkKind
 from archive.ingest.chunking_service import chunk_document
-from archive.ingest.metadata_service import DocMetadata
-from archive.ingest.pdf_parse_gateway import ParsedDoc
+from archive.ingest.metadata.metadata_service import DocMetadata
+from archive.ingest.parse.pdf_parse_gateway import ParsedDoc
 
 METADATA = DocMetadata(
     doc_type="unknown",

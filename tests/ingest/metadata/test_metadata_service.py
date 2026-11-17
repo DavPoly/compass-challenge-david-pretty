@@ -2,12 +2,12 @@
 
 import pytest
 
-from archive.ingest.metadata_service import (
+from archive.ingest.metadata.metadata_service import (
     DocMetadata,
     extract_identifiers,
     extract_metadata,
 )
-from archive.ingest.pdf_parse_gateway import ParsedDoc
+from archive.ingest.parse.pdf_parse_gateway import ParsedDoc
 
 
 def _meta(*pages: str) -> DocMetadata:

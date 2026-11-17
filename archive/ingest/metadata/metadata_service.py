@@ -3,6 +3,7 @@
 import re
 from dataclasses import dataclass
 
+from archive.common.chunk_model import DocType
 from archive.common.text.date_parsing_constants import (
     DATE_DAY_MONTH_WORD_PATTERN,
     DATE_ISO_PATTERN,
@@ -21,8 +22,7 @@ from archive.common.text.text_normalize_utils import (
     join_pages,
     normalize_for_match,
 )
-from archive.ingest.ingest_constants import (
-    DOC_TYPE_UNKNOWN,
+from archive.ingest.metadata.metadata_constants import (
     EMAIL_PATTERN,
     IDENTIFIER_DASH_CHARS,
     IDENTIFIER_PATTERN,
@@ -33,7 +33,7 @@ from archive.ingest.ingest_constants import (
     LANG_HINTS_FR,
     LANG_WORD_PATTERN,
 )
-from archive.ingest.pdf_parse_gateway import ParsedDoc
+from archive.ingest.parse.pdf_parse_gateway import ParsedDoc
 
 _IDENTIFIER = re.compile(IDENTIFIER_PATTERN)
 _EMAIL = re.compile(EMAIL_PATTERN)
@@ -59,12 +59,18 @@ class DocMetadata:
         doc_date: First date found, ISO `YYYY-MM-DD`, or None.
         identifiers: Canonical codes and emails, sorted and unique.
         lang: "fr" or "en".
+        version: Document version label, or None.
+        effective_from: ISO date the version takes effect, or None.
+        series: Key shared by the versions of one document, or None.
     """
 
     doc_type: str
     doc_date: str | None
     identifiers: list[str]
     lang: str
+    version: str | None = None
+    effective_from: str | None = None
+    series: str | None = None
 
 
 def extract_metadata(doc: ParsedDoc) -> DocMetadata:
@@ -84,7 +90,7 @@ def extract_metadata(doc: ParsedDoc) -> DocMetadata:
     """
     text = join_pages(doc.pages)
     return DocMetadata(
-        doc_type=DOC_TYPE_UNKNOWN,
+        doc_type=DocType.UNKNOWN,
         doc_date=_find_first_date(text),
         identifiers=extract_identifiers(text),
         lang=_detect_lang(text),
