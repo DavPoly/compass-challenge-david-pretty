@@ -242,3 +242,13 @@ After the final merge, `pre-commit-review` (`reviewer` + `quality`) runs on
   @16–32 0.73; s01/s12 stay 0 at every k, s20 0.12 at k=32.
 - 2026-11-16 (batch A): merged 3149ef5, c40f626, af8900a, 14afc88;
   ruff, format, mypy --strict green, 374 tests.
+- 2026-11-16 (T5): retrieval wired through `retrieve()`. Rebuild: 3,048
+  docs, 3,050 chunks, 0 failures, 100.9 s, storage.sqlite 14.3 MB.
+  Recall on the new index (17 gold questions), mean:
+  share 0.5 → @8 0.67, @12 0.71, @16 0.72, @20 0.73, @24 0.79;
+  share 0.75 → @8 0.67, @12 0.71, @16–32 0.79. Chosen K=16, share
+  0.75 (s12 0 → 1.0, s10 → 1.0 at k=16); s20 stays ≤ 0.12 (needs the
+  step 04 aggregation recipe). `MAX_PROMPT_CHUNKS = SEARCH_TOP_K`.
+  Prompt at K=16: avg 18.1 k chars, max 32.5 k. Merge 23 code lines.
+- 2026-11-16: LLM_* unset in this session, so the pre-commit review and
+  the V sync check run before the scored V run (as in step 01).
