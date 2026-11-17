@@ -9,9 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
 
-from archive.agent.draft_service import draft
-from archive.agent.retrieve_constants import SEARCH_TOP_K
-from archive.agent.retrieve_service import retrieve
+from archive.agent.answer_service import answer_question
 from archive.common.config import AppConfig
 from archive.common.constants import PDF_GLOB
 from archive.ingest.build.index_sync_service import sync_index
@@ -123,11 +121,12 @@ def _answer_question(question: Question, context: RunContext) -> FinalAnswer:
     if not question.is_valid:
         logger.warning(LOG_QUESTION_INVALID, question.id, question.error)
         return FinalAnswer.not_found(question.id)
-    hits = retrieve(question.question, context.search, SEARCH_TOP_K)
-    retrieved_ids = {hit.chunk.doc_id for hit in hits}
+    drafted, retrieved_ids = answer_question(
+        question, context.search, context.llm
+    )
     result = validate(
         question.id,
-        draft(question, hits, context.llm),
+        drafted,
         retrieved_ids,
         context.valid_doc_ids,
     )
