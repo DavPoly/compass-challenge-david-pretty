@@ -215,6 +215,8 @@
     box.appendChild(el("h2", { class: "question-title", text: question.question }));
     if (state.tab === "answer") {
       box.appendChild(answerBox(question));
+      var timeline = D.stepsTimeline(question.steps, question.elapsed_s);
+      if (timeline) box.appendChild(timeline);
       box.appendChild(noticesFor(question));
     } else {
       box.appendChild(documentsList(question));

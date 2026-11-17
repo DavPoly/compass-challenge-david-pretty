@@ -148,6 +148,34 @@
     if (text.length > SMALL_AVATAR_TEXT) props.style += ";font-size:" + Math.round(size * SMALL_FONT_RATIO) + "px";
     return el("span", props, [text]);
   }
+  var STEP_ICONS = {
+    route: "arrow-forward", retrieve: "search", draft: "doc", hop: "link",
+    validate: "verified", ground: "task-alt", render: "fullscreen"
+  };
+  var STEPS_TITLE = "Déroulement";
+  var TOTAL_LABEL = "Total : ";
+  function stepRow(step, marker) {
+    return el("li", { class: "step" }, [
+      marker,
+      el("span", { class: "grow" }, [
+        el("span", { text: step.label }),
+        step.detail ? el("span", { class: "step-detail", text: " · " + step.detail }) : null
+      ]),
+      el("span", { class: "step-time", text: decimal(step.elapsed_s || 0, 1) + " s" })
+    ]);
+  }
+  function stepsTimeline(steps, totalSeconds) {
+    if (!Array.isArray(steps) || !steps.length) return null;
+    var total = typeof totalSeconds === "number" ? totalSeconds : steps[steps.length - 1].elapsed_s || 0;
+    return el("details", { class: "timeline", open: true }, [
+      el("summary", {}, [el("span", { text: STEPS_TITLE }), icon("arrow-forward", "sm chevron")]),
+      el("ul", { class: "steps" }, steps.map(function (step) {
+        return stepRow(step, icon(STEP_ICONS[step.step] || "check", "sm"));
+      })),
+      el("div", { class: "timeline-total", text: TOTAL_LABEL + decimal(total, 1) + " s" })
+    ]);
+  }
+
   function iconButton(name, label, onclick, extraClass) {
     return el("button", { class: "round " + (extraClass || ""), type: "button", "aria-label": label, title: label, onclick: onclick }, [icon(name)]);
   }
@@ -155,6 +183,7 @@
   window.ViewerDom = {
     el: el, clear: clear, icon: icon, ring: ring, isDark: isDark, toggleTheme: toggleTheme,
     STATUS: STATUS, CONF: CONF, confKey: confKey, asList: asList, answerText: answerText,
-    normalize: normalize, formatDate: formatDate, decimal: decimal, initials: initials, tone: tone, chip: chip, avatar: avatar, iconButton: iconButton
+    normalize: normalize, formatDate: formatDate, decimal: decimal, initials: initials, tone: tone, chip: chip, avatar: avatar, iconButton: iconButton,
+    stepRow: stepRow, stepsTimeline: stepsTimeline
   };
 })();

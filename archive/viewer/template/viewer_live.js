@@ -29,15 +29,7 @@
     return icon("check", "sm");
   }
   function stepNode(step, isLatest, isFailed) {
-    var marker = stepMarker(isLatest, isFailed);
-    return el("li", { class: "step" }, [
-      marker,
-      el("span", { class: "grow" }, [
-        el("span", { text: step.label }),
-        step.detail ? el("span", { class: "step-detail", text: " · " + step.detail }) : null
-      ]),
-      el("span", { class: "step-time", text: decimal(step.elapsed_s || 0, 1) + " s" })
-    ]);
+    return D.stepRow(step, stepMarker(isLatest, isFailed));
   }
   function renderPanel(question, steps, errorMessage) {
     clear(panel);
