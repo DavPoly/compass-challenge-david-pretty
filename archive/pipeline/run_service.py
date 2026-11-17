@@ -40,7 +40,7 @@ from archive.pipeline.pipeline_constants import (
     QUESTION_BUDGET_S,
     WORKER_COUNT,
 )
-from archive.retrieval.qdrant_gateway import IndexOpenError
+from archive.retrieval.qdrant.qdrant_gateway import IndexOpenError
 from archive.retrieval.search_service import SearchService
 from archive.validation.answer_model import FinalAnswer
 from archive.validation.answer_validator import validate

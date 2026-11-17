@@ -19,7 +19,7 @@ from archive.pipeline.pipeline_constants import (  # noqa: E402
     EXIT_ERROR,
     EXIT_OK,
 )
-from archive.retrieval.qdrant_constants import QDRANT_SUBDIR  # noqa: E402
+from archive.retrieval.qdrant.qdrant_constants import QDRANT_SUBDIR  # noqa: E402
 
 logger = logging.getLogger("build_index")
 SQLITE_NAME = "storage.sqlite"

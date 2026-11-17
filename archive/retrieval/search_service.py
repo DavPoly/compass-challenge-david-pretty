@@ -15,18 +15,18 @@ from qdrant_client import models
 from archive.common.chunk_model import Chunk
 from archive.ingest.build.manifest_gateway import load_manifest
 from archive.ingest.metadata.metadata_service import extract_identifiers
-from archive.retrieval.qdrant_constants import (
+from archive.retrieval.qdrant.qdrant_constants import (
     FIELD_DOC_DATE,
     FIELD_DOC_TYPE,
     FIELD_IDENTIFIERS,
 )
-from archive.retrieval.qdrant_gateway import QdrantGateway
+from archive.retrieval.qdrant.qdrant_gateway import QdrantGateway
+from archive.retrieval.qdrant.sparse_encoding_utils import sparse_vector
 from archive.retrieval.search_constants import (
     LOG_CLOSE_TIMEOUT,
     QUERY_DRAIN_TIMEOUT_S,
     UNRANKED_SCORE,
 )
-from archive.retrieval.sparse_encoding_utils import sparse_vector
 
 logger = logging.getLogger(__name__)
 
