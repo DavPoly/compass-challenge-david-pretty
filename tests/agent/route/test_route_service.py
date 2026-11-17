@@ -55,21 +55,53 @@ def test_regex_codes_override_llm_codes() -> None:
     assert "WRONG" not in plan.project_codes
 
 
-def test_invalid_dates_become_none() -> None:
+@pytest.mark.parametrize(
+    ("raw", "clamped"),
+    [
+        ("2023-04-31", "2023-04-30"),
+        ("2023-02-29", "2023-02-28"),
+        ("2024-02-30", "2024-02-29"),
+        ("2023-02-30", "2023-02-28"),
+    ],
+)
+def test_day_past_month_end_is_clamped(raw: str, clamped: str) -> None:
     llm = FakeLlm(
         QuestionPlan(
             family=QuestionFamily.AGGREGATION,
-            date_from="2023-13-01",
-            date_to="la semaine passee",
-            as_of_date="2023-02-30",
+            date_from="2023-04-01",
+            date_to=raw,
         )
     )
 
     plan = _plan(llm)
 
+    assert plan.family is QuestionFamily.AGGREGATION
+    assert plan.date_from == "2023-04-01"
+    assert plan.date_to == clamped
+
+
+@pytest.mark.parametrize(
+    "garbage",
+    ["2023-13-01", "la semaine passee", "2023-04-32", "2023-04-00", "2023"],
+)
+def test_unparseable_date_downgrades_the_plan_to_direct(
+    garbage: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    llm = FakeLlm(
+        QuestionPlan(
+            family=QuestionFamily.AGGREGATION,
+            date_from="2023-01-01",
+            date_to=garbage,
+        )
+    )
+
+    with caplog.at_level(logging.WARNING):
+        plan = _plan(llm)
+
+    assert plan.family is QuestionFamily.DIRECT
     assert plan.date_from is None
-    assert plan.date_to is None
-    assert plan.as_of_date is None
+    assert plan.project_codes == find_identifiers(CODE_QUESTION.question)
+    assert "q1" in caplog.text
 
 
 def test_valid_dates_are_kept() -> None:

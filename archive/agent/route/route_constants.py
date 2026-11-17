@@ -18,6 +18,10 @@ MEASURE_DESCRIPTION = (
 POLICY_TOPIC_DESCRIPTION = "Policy subject for superseded questions."
 
 ISO_DATE_PATTERN = r"(\d{4})-(\d{2})-(\d{2})"
+MAX_DAY_OF_MONTH = 31
+MSG_INVALID_DATE = (
+    "Route plan of question %s has an invalid date %r; falling back to direct"
+)
 MSG_PLAN_FALLBACK = (
     "Route plan unavailable for question %s; falling back to direct: %s"
 )
