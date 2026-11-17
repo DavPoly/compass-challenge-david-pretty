@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 EvidenceState = Literal[
-    "verified", "unverified", "not_located", "not_rendered"
+    "verified", "unverified", "unchecked", "not_located", "not_rendered"
 ]
 
 
@@ -39,6 +39,8 @@ class EvidenceView(BaseModel):
     """One evidence quote and where it was found in its PDF.
 
     Image paths are relative to ``index.html`` and use forward slashes.
+    State "unchecked" means grounding did not run for the question, so
+    the quote was neither confirmed nor refuted.
     """
 
     doc_id: str

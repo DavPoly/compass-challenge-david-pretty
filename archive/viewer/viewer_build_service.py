@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
 from pydantic import ValidationError
 
@@ -58,6 +58,7 @@ from archive.viewer.viewer_model import (
 logger = logging.getLogger(__name__)
 
 Answer = str | list[str]
+Verdict = Literal["verified", "unverified", "unchecked"]
 
 
 @dataclass(frozen=True)
@@ -124,8 +125,8 @@ def build_viewer(request: ViewerRequest) -> Path:
     correctness and the summary an accuracy per confidence label.
 
     A quote is "verified" unless the grounding report lists it as
-    unverified; a trace without grounding report has nothing flagged, so
-    its quotes are treated as verified.
+    unverified; when a draft has no grounding report (the check
+    crashed), its quotes are "unchecked" rather than verified.
 
     Returns:
         Path of the written ``index.html``.
@@ -286,7 +287,7 @@ def _evidence_views(
     return [
         _evidence_view(
             evidence,
-            evidence.quote not in unverified,
+            _verdict(trace, evidence, unverified),
             pages_dir / f"{stem_base}_{index}",
             request,
         )
@@ -294,16 +295,25 @@ def _evidence_views(
     ]
 
 
+def _verdict(
+    trace: QuestionTrace, evidence: Evidence, unverified: set[str]
+) -> Verdict:
+    if trace.grounding is None:
+        return "unchecked"
+    return "unverified" if evidence.quote in unverified else "verified"
+
+
 def _evidence_view(
     evidence: Evidence,
-    is_verified: bool,
+    verdict: Verdict,
     out_stem: Path,
     request: ViewerRequest,
 ) -> EvidenceView:
+    is_verified = verdict != "unverified"
     rendered = _try_render(evidence, is_verified, out_stem, request)
     state: EvidenceState
-    if not is_verified:
-        state = "unverified"
+    if verdict != "verified":
+        state = verdict
     elif rendered is None:
         state = "not_rendered"
     else:

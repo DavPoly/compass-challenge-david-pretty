@@ -209,6 +209,18 @@ def test_unverified_and_not_located_states(tmp_path: Path) -> None:
     assert states == ["unverified", "not_located"]
 
 
+def test_missing_grounding_marks_quotes_unchecked(tmp_path: Path) -> None:
+    trace = make_trace("q1", ["a", "b"]).model_copy(update={"grounding": None})
+    write_trace(tmp_path / "traces", trace)
+    renderer = FakeRenderer()
+
+    data = build(tmp_path, renderer)
+
+    states = [e["state"] for e in data["questions"][0]["evidence"]]  # type: ignore[index]
+    assert states == ["unchecked", "unchecked"]
+    assert all(call[2] for call in renderer.calls)
+
+
 def test_renderer_exception_gives_not_rendered(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
