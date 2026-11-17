@@ -62,7 +62,7 @@ def _run(
 ) -> tuple[list[str], str | None] | None:
     plan = QuestionPlan(family=QuestionFamily.SUPERSEDED, as_of_date=as_of)
     search = FakeSearch(
-        [V2, OTHER] if ranked is None else ranked, [V1, V2, V3, OTHER]
+        [V2, V3, V1, OTHER] if ranked is None else ranked, [V1, V2, V3, OTHER]
     )
     result = run_superseded(QUESTION, plan, search)
     if result is None:
@@ -102,14 +102,14 @@ def test_no_series_hit_returns_none() -> None:
 
 
 def test_hits_list_picked_then_newest_first_then_other_top_hits() -> None:
-    outcome = _run("2021-06-01", ranked=[V2, OTHER])
+    outcome = _run("2021-06-01", ranked=[V2, V3, V1, OTHER])
 
     assert outcome is not None
     assert outcome[0] == ["doc_v1", "doc_v3", "doc_v2", "doc_other"]
 
 
 def test_other_series_policies_are_not_listed_as_versions() -> None:
-    outcome = _run("2021-06-01", ranked=[V2])
+    outcome = _run("2021-06-01", ranked=[V2, V3, V1])
 
     assert outcome is not None
     assert outcome[0] == ["doc_v1", "doc_v3", "doc_v2"]
@@ -136,4 +136,32 @@ def test_version_without_effective_from_is_listed_not_picked() -> None:
     assert [hit.chunk.doc_id for hit in result.hits] == [
         "doc_v3",
         "doc_undated",
+    ]
+
+
+def test_ambiguous_series_vote_returns_none() -> None:
+    assert _run(None, ranked=[V2, OTHER]) is None
+
+
+def test_policy_topic_is_searched_in_addition_to_the_question() -> None:
+    queries: list[str] = []
+
+    class RecordingSearch(FakeSearch):
+        def hybrid_search(
+            self, query: str, filters: SearchFilters | None, k: int
+        ) -> list[SearchHit]:
+            queries.append(query)
+            return super().hybrid_search(query, filters, k)
+
+    plan = QuestionPlan(family=QuestionFamily.SUPERSEDED, policy_topic="frais")
+    search = RecordingSearch([V2, V3, V1], [V1, V2, V3])
+
+    result = run_superseded(QUESTION, plan, search)
+
+    assert queries == [QUESTION.question, "frais"]
+    assert result is not None
+    assert [hit.chunk.doc_id for hit in result.hits] == [
+        "doc_v3",
+        "doc_v2",
+        "doc_v1",
     ]

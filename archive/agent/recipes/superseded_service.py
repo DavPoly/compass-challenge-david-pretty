@@ -1,6 +1,7 @@
 """Superseded recipe: pick the policy version in force."""
 
 import logging
+from itertools import zip_longest
 
 from archive.agent.recipes.recipe_constants import (
     POLICY_DOC_TYPE,
@@ -8,7 +9,9 @@ from archive.agent.recipes.recipe_constants import (
     SUPERSEDED_NOTE_TEMPLATE,
     SUPERSEDED_PERIOD_CLOSED,
     SUPERSEDED_PERIOD_OPEN,
+    SUPERSEDED_RRF_OFFSET,
     SUPERSEDED_SEARCH_K,
+    SUPERSEDED_SERIES_MARGIN,
     SUPERSEDED_TODAY_LABEL,
 )
 from archive.agent.recipes.recipe_model import RecipeResult, RecipeSearchPort
@@ -39,14 +42,17 @@ def run_superseded(
         series or version in force is found (use the direct path).
     """
     filters = SearchFilters(doc_types=[POLICY_DOC_TYPE])
-    top_hits = search.hybrid_search(
-        plan.policy_topic or question.question,
-        filters,
-        SUPERSEDED_SEARCH_K,
-    )
-    series = _best_series(top_hits)
+    queries = [question.question]
+    if plan.policy_topic:
+        queries.append(plan.policy_topic)
+    rankings = [
+        search.hybrid_search(query, filters, SUPERSEDED_SEARCH_K)
+        for query in queries
+    ]
+    top_hits = _merge_rankings(rankings)
+    series = _winning_series(rankings)
     if series is None:
-        logger.info("question %s: no policy series found", question.id)
+        logger.info("question %s: no clear policy series", question.id)
         return None
     versions = _series_versions(
         [*top_hits, *search.list_by_filter(filters, SUPERSEDED_LIST_CAP)],
@@ -66,12 +72,41 @@ def run_superseded(
     )
 
 
-def _best_series(hits: list[SearchHit]) -> str | None:
-    """Return the series of the best-ranked hit that has one."""
-    for hit in hits:
-        if hit.chunk.series:
-            return hit.chunk.series
-    return None
+def _merge_rankings(rankings: list[list[SearchHit]]) -> list[SearchHit]:
+    """Interleave rankings by rank, dropping repeated documents."""
+    merged: list[SearchHit] = []
+    seen: set[str] = set()
+    for rank_hits in zip_longest(*rankings):
+        for hit in rank_hits:
+            if hit is not None and hit.chunk.doc_id not in seen:
+                seen.add(hit.chunk.doc_id)
+                merged.append(hit)
+    return merged
+
+
+def _winning_series(rankings: list[list[SearchHit]]) -> str | None:
+    """Vote for a series by summed reciprocal rank over all rankings.
+
+    Returns None unless the top series beats the runner-up by
+    `SUPERSEDED_SERIES_MARGIN` (a ratio), so ambiguous questions fall
+    back to the direct path.
+    """
+    scores: dict[str, float] = {}
+    for hits in rankings:
+        for rank, hit in enumerate(hits, start=1):
+            if hit.chunk.series:
+                scores[hit.chunk.series] = scores.get(
+                    hit.chunk.series, 0.0
+                ) + 1 / (SUPERSEDED_RRF_OFFSET + rank)
+    ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+    if not ranked:
+        return None
+    if (
+        len(ranked) > 1
+        and ranked[0][1] < SUPERSEDED_SERIES_MARGIN * ranked[1][1]
+    ):
+        return None
+    return ranked[0][0]
 
 
 def _series_versions(hits: list[SearchHit], series: str) -> list[SearchHit]:
