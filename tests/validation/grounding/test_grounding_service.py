@@ -326,3 +326,72 @@ def test_trailing_punctuation_of_an_answer_is_ignored() -> None:
     )
 
     assert report.ungrounded_values == []
+
+
+ELIDED_DOC = (
+    "Project number | BRV-2023-14 | Date | 2023-05-01 | "
+    "Subcontractor | Pavage Brightwater ltée"
+)
+
+
+@pytest.mark.parametrize("marker", ["...", "…", "[...]"])
+def test_elided_quote_with_ordered_pieces_is_verified(marker: str) -> None:
+    quote = f"Project number | BRV-2023-14 {marker} Subcontractor | Pavage"
+    report = _grounded_report("BRV-2023-14", ELIDED_DOC, quote)
+
+    assert report.unverified_quotes == []
+
+
+def test_elided_quote_tolerates_spacing_differences() -> None:
+    quote = "Project number | BRV-2023-14 ... PavageBrightwater ltée"
+    report = _grounded_report("BRV-2023-14", ELIDED_DOC, quote)
+
+    assert report.unverified_quotes == []
+
+
+def test_elided_quote_with_absent_piece_is_unverified() -> None:
+    quote = "Project number | BRV-2023-14 ... Subcontractor | Autre ltée"
+    report = _grounded_report("BRV-2023-14", ELIDED_DOC, quote)
+
+    assert report.unverified_quotes == [quote]
+    assert report.confidence is Confidence.LOW
+
+
+def test_elided_quote_with_pieces_in_wrong_order_is_unverified() -> None:
+    quote = "Subcontractor | Pavage ... Project number | BRV-2023-14"
+    report = _grounded_report("BRV-2023-14", ELIDED_DOC, quote)
+
+    assert report.unverified_quotes == [quote]
+
+
+def test_quote_of_only_ellipsis_and_tiny_pieces_is_unverified() -> None:
+    report = _grounded_report("BRV-2023-14", ELIDED_DOC, "Date ... ltée")
+
+    assert report.unverified_quotes == ["Date ... ltée"]
+
+
+@pytest.mark.parametrize(
+    ("answer", "doc_text", "quote"),
+    [
+        ("0.57 $ par kilomètre", "Taux : 0,57 $ / km", "0,57 $ / km"),
+        (
+            "730000.00 CAD (taxes en sus)",
+            "Montant : 730 000,00 $ avant taxes",
+            "730 000,00 $",
+        ),
+    ],
+)
+def test_amount_embedded_in_answer_text_is_grounded(
+    answer: str, doc_text: str, quote: str
+) -> None:
+    report = _grounded_report(answer, doc_text, quote)
+
+    assert report.ungrounded_values == []
+
+
+def test_embedded_amount_differing_from_quote_is_ungrounded() -> None:
+    report = _grounded_report(
+        "0.58 $ par kilomètre", "Taux : 0,57 $ / km", "0,57 $ / km"
+    )
+
+    assert report.ungrounded_values == ["0.58 $ par kilomètre"]
