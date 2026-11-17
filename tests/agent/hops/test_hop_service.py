@@ -483,3 +483,51 @@ def test_targeted_but_unprompted_hit_is_not_new(
     assert "doc_t15" not in llm.user_prompt(0)
     assert len(llm.calls) == 1
     assert cut_off not in result.hits
+
+
+def _not_found(missing: str | None = None) -> DraftAnswer:
+    return ANSWER.model_copy(
+        update={
+            "status": AnswerStatus.NOT_FOUND,
+            "evidence_sufficient": False,
+            "missing": missing,
+        }
+    )
+
+
+def test_final_not_found_keeps_an_earlier_answered_draft() -> None:
+    partial = _gap().model_copy(update={"answer": "partial"})
+    llm = FakeLlm(partial, _not_found())
+
+    result = _run(
+        llm, FakeSearch(plain=[_hit("doc_b")]), HopPolicy.multi_hop()
+    )
+
+    assert len(llm.calls) == 2
+    assert result.draft == partial
+    assert _doc_ids(result) == ["doc_a", "doc_b"]
+
+
+def test_final_not_found_keeps_the_seeded_answered_draft() -> None:
+    seeded = _gap().model_copy(update={"answer": "seeded"})
+    llm = FakeLlm(_not_found())
+
+    result = _run(
+        llm,
+        FakeSearch(plain=[_hit("doc_b")]),
+        HopPolicy.safety_net(),
+        first_draft=seeded,
+    )
+
+    assert result.draft == seeded
+
+
+def test_not_found_without_earlier_answer_is_returned() -> None:
+    lead = _not_found("email of Xavier")
+    llm = FakeLlm(lead, _not_found())
+
+    result = _run(
+        llm, FakeSearch(plain=[_hit("doc_b")]), HopPolicy.multi_hop()
+    )
+
+    assert result.draft == _not_found()

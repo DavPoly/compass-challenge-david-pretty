@@ -30,7 +30,7 @@ from archive.agent.recipes.recipe_model import (
 from archive.agent.retrieve_service import dedupe_hits
 from archive.llm.llm_gateway import LlmGateway
 from archive.retrieval.search_service import SearchFilters, SearchHit
-from archive.validation.answer_model import DraftAnswer
+from archive.validation.answer_model import AnswerStatus, DraftAnswer
 from archive.validation.input_model import Question
 
 logger = logging.getLogger(__name__)
@@ -45,12 +45,14 @@ class _LoopState:
         targeted: Expansion and follow-up hits, newest first.
         used: Every hit that reached a prompt, by first appearance.
         expanded: Whether identifier expansion already ran.
+        answered: The latest draft whose status was `answered`.
     """
 
     original: list[SearchHit]
     targeted: list[SearchHit] = field(default_factory=list)
     used: dict[str, SearchHit] = field(default_factory=dict)
     expanded: bool = False
+    answered: DraftAnswer | None = None
 
     def prompt_hits(self) -> list[SearchHit]:
         """Return targeted hits, then linked originals, then the rest.
@@ -73,6 +75,15 @@ class _LoopState:
         reserved = min(MIN_ORIGINAL_SLOTS, len(originals))
         kept = targeted[: MAX_PROMPT_CHUNKS - reserved]
         return kept + originals[: MAX_PROMPT_CHUNKS - len(kept)]
+
+    def final_draft(self, current: DraftAnswer) -> DraftAnswer:
+        """Return `current`, or an earlier answer if it regressed.
+
+        A final `not_found` draft never replaces an answered one.
+        """
+        if current.status is AnswerStatus.NOT_FOUND and self.answered:
+            return self.answered
+        return current
 
     def mark_used(self, prompt_hits: list[SearchHit]) -> None:
         """Record hits that reached a prompt."""
@@ -145,10 +156,15 @@ def _draft_next(
     return draft(question, prompt_hits, llm, note=note)
 
 
-def _log_draft(
-    question: Question, draft_number: int, current: DraftAnswer
+def _record_draft(
+    question: Question,
+    draft_number: int,
+    current: DraftAnswer,
+    state: _LoopState,
 ) -> None:
-    """Log one line describing a draft, with `missing` truncated."""
+    """Log one line describing a draft and remember answered ones."""
+    if current.status is AnswerStatus.ANSWERED:
+        state.answered = current
     missing = (current.missing or "").strip()[:HOP_LOG_MISSING_MAX_CHARS]
     logger.info(
         LOG_DRAFT,
@@ -191,7 +207,8 @@ def run_hops(  # noqa: PLR0913 - frozen signature
 
     Returns:
         A result with every hit that reached a prompt and the last
-        draft. Prompt hits: targeted ones (newest first), originals
+        draft; a final `not_found` is replaced by the latest earlier
+        `answered` draft. Prompt hits: targeted ones (newest first), originals
         sharing an identifier with them, then the other originals,
         capped at `MAX_PROMPT_CHUNKS`.
 
@@ -209,7 +226,7 @@ def run_hops(  # noqa: PLR0913 - frozen signature
             state.targeted = expand_by_identifiers(question, hits, search)
         current = _draft_next(question, state, llm, note)
     drafts_made = 1
-    _log_draft(question, drafts_made, current)
+    _record_draft(question, drafts_made, current, state)
     while _should_follow_up(
         current, state, drafts_made, policy.clock() - start, policy
     ):
@@ -223,5 +240,6 @@ def run_hops(  # noqa: PLR0913 - frozen signature
         state.targeted = new_hits[:HOP_NEW_HITS_MAX] + state.targeted
         current = _draft_next(question, state, llm, note)
         drafts_made += 1
-        _log_draft(question, drafts_made, current)
-    return RecipeResult(hits=list(state.used.values()), draft=current)
+        _record_draft(question, drafts_made, current, state)
+    final = state.final_draft(current)
+    return RecipeResult(hits=list(state.used.values()), draft=final)
