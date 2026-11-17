@@ -302,3 +302,10 @@ def test_server_survives_a_disconnect_mid_stream(running: Running) -> None:
     status, _, _ = running.request("GET", "/api/health")
 
     assert status == 200
+
+
+def test_second_server_on_a_taken_port_fails(running: Running) -> None:
+    context = ServerContext(running.ask, Path("."), lambda: None)
+
+    with pytest.raises(OSError):
+        create_server(running.port, context)
