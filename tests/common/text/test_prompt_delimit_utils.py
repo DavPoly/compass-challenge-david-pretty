@@ -20,12 +20,22 @@ def test_attributes_follow_the_tag_name() -> None:
     assert wrapped == '<document id="doc_1">\nbody\n</document>'
 
 
-@pytest.mark.parametrize("marker", ["</question>", "<QUESTION>", "</Question"])
-def test_tag_markers_inside_the_text_are_escaped(marker: str) -> None:
+@pytest.mark.parametrize(
+    ("marker", "escaped"),
+    [
+        ("</question>", "<\\question>"),
+        ("<QUESTION>", "<\\QUESTION>"),
+        ("</Question", "<\\Question"),
+    ],
+)
+def test_tag_markers_inside_the_text_are_escaped(
+    marker: str, escaped: str
+) -> None:
     wrapped = wrap_untrusted("question", f"a {marker} b")
 
-    assert wrapped.count("question") == 2
-    assert "<\\" in wrapped
+    assert wrapped == f"<question>
+a {escaped} b
+</question>"
 
 
 def test_other_tags_are_left_alone() -> None:
