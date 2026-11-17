@@ -264,3 +264,13 @@ After the final merge, `pre-commit-review` (`reviewer` + `quality`) runs on
   dropped (check showed no loss on 28 docs); "Version 2.1" → "2";
   folder move of chunking_* to ingest/chunk/ and the metadata_constants
   split are deferred (churn > gain this late).
+- 2026-11-16 (V, run by the user on feat/ingest-quality @ 29226f1 code):
+  score.py --details 33.30/45 (baseline 26.60): exactitude 20.62/30
+  (11/16), fiabilité 9.15/10 (statuses 4/4, 5 unjustified abstentions),
+  citations 3.53/5. By type: direct 6/6, multi_hop 1/4, aggregation 2/3,
+  superseded 2/3, conflict 1/1, unanswerable 3/3. Startup sync no-op
+  1.9 s; the questions phase took about 16 s. Misses, all not_found:
+  s05/s08/s15 multi_hop (second hop to the directory or project sheet is
+  never retrieved: step 05 ReAct), s20 aggregation (17 gold docs: step
+  04 recipe), s01 superseded (FR question, policy-by-date lookup: step
+  04 superseded recipe).
