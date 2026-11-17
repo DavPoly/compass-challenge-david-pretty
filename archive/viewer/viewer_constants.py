@@ -27,6 +27,7 @@ INLINE_ASSETS = (
     ("/*__VIEWER_LIVE__*/", "viewer_live.js"),
 )
 INDEX_FILENAME = "index.html"
+TEMP_SUFFIX = ".tmp"
 PAGES_DIRNAME = "pages"
 VIEWER_ENCODING = "utf-8"
 RETRIEVED_LIMIT = 10

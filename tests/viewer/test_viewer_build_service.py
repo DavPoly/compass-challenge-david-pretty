@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -24,7 +25,7 @@ from archive.viewer.viewer_build_service import (
     build_viewer,
     question_view_from_trace,
 )
-from archive.viewer.viewer_constants import DATA_PLACEHOLDER
+from archive.viewer.viewer_constants import DATA_PLACEHOLDER, TEMP_SUFFIX
 
 TEMPLATE = (
     '<script type="application/json" id="d">' + DATA_PLACEHOLDER + "</script>"
@@ -469,3 +470,25 @@ def test_template_inlines_live_script(tmp_path: Path) -> None:
     text = build_viewer(request).read_text(encoding="utf-8")
 
     assert text.startswith("<script>const live=1;</script>")
+
+
+def test_index_is_replaced_atomically_without_leftover_temp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    request = _live_request(tmp_path)
+    target = build_viewer(request)
+    target.write_text("old page", encoding="utf-8")
+    seen: list[tuple[str, bool]] = []
+    real_replace = os.replace
+
+    def spy(source: Path, destination: Path) -> None:
+        seen.append((target.read_text("utf-8"), Path(source).exists()))
+        real_replace(source, destination)
+
+    monkeypatch.setattr(os, "replace", spy)
+
+    build_viewer(request)
+
+    assert seen == [("old page", True)]
+    assert "old page" not in target.read_text("utf-8")
+    assert not target.with_name(target.name + TEMP_SUFFIX).exists()
