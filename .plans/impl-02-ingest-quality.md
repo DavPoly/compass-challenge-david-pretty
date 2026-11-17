@@ -3,7 +3,7 @@
 **Status:** in-progress
 **Parent:** `.plans/impl-00-roadmap.md` step 02, `.plans/global-architecture.md` §1
 **BASE:** `59a79fc618692ee90f82cf2af424f1bbdfed5a05`
-**Subagent branches:** refactor/ingest-layout (T0, merged aee336d), feat/table-render (T1), feat/doc-metadata (T2), feat/index-sync (T3), feat/retrieve-hints (T4), feat/integrate-retrieve (T5), fix/sync-robustness, fix/metadata-false-matches, fix/script-quality (review round 1)
+**Subagent branches:** refactor/ingest-layout (T0, merged aee336d), feat/table-render (T1), feat/doc-metadata (T2), feat/index-sync (T3), feat/retrieve-hints (T4), feat/integrate-retrieve (T5), fix/sync-robustness, fix/metadata-false-matches, fix/script-quality (review round 1), chore/rebuild-index-2
 **Orchestrator branch B:** `feat/ingest-quality`, cut from `main` @ 59a79fc
 
 ## Context
@@ -274,3 +274,15 @@ After the final merge, `pre-commit-review` (`reviewer` + `quality`) runs on
   never retrieved: step 05 ReAct), s20 aggregation (17 gold docs: step
   04 recipe), s01 superseded (FR question, policy-by-date lookup: step
   04 superseded recipe).
+- 2026-11-16 (fix round 1): merged sync-robustness (142 lines),
+  metadata-false-matches (64), script-quality (336); 408 tests green.
+  Startup sync now catches any exception (best-effort boundary) and
+  deletes `added` ids too (orphans). Doc type: single-word phrases
+  exact, fuzzy cutoff 0.88; corpus diff 3/3048 changed, all fixes
+  (doc_0846, doc_1108, doc_2844 "MEMO — Updated emergency contacts":
+  contract → memo). Dates: short months exact ("mais" ≠ mai), no date
+  after `\w`, `/` or `.` (version strings), 2-digit-year pivot 30.
+  Accepted: "Bulletin de paie" still maps to newsletter (exact
+  "bulletin"; no such doc in the corpus). check_tables reuses
+  detect_doc_type: directory 2/2 (only 2 directory docs), invoice sum
+  10/10. `scripts/__init__.py` added (mypy duplicate-module error).
