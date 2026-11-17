@@ -8,20 +8,13 @@
   var ACCURACY = DATA.is_scored && SUMMARY.accuracy_by_confidence ? SUMMARY.accuracy_by_confidence : null;
   var WIDE_RAIL_QUERY = "(max-width: 1279px)";
   var TOAST_MS = 2200;
-  var HIT_LIMIT = 5;
+  var TOAST_ERROR_MS = 6000;
   var CLAIM = "Les réponses à confiance élevée sont fiables ; relisez en priorité celles à confiance faible.";
 
-  var STATUS = {
-    answered: { label: "Répondue", plural: "Répondues", tone: "green", icon: "task-alt" },
-    not_found: { label: "Introuvable", plural: "Introuvables", tone: "gray", icon: "search-off" },
-    conflict: { label: "Conflit", plural: "Conflits", tone: "pink", icon: "compare" }
-  };
-  var CONF = {
-    high: { label: "Élevée", short: "ÉL", tone: "green" },
-    medium: { label: "Moyenne", short: "MO", tone: "yellow" },
-    low: { label: "Faible", short: "FA", tone: "pink" },
-    unknown: { label: "Inconnue", short: "?", tone: "gray" }
-  };
+  var STATUS = D.STATUS, CONF = D.CONF, confKey = D.confKey, asList = D.asList;
+  var answerText = D.answerText, normalize = D.normalize, initials = D.initials;
+  var formatDate = D.formatDate, decimal = D.decimal;
+  var tone = D.tone, chip = D.chip, avatar = D.avatar, iconButton = D.iconButton;
   var CITE = {
     verified: { label: "Citation vérifiée", tone: "green" },
     unverified: { label: "Citation absente du document", tone: "pink" },
@@ -31,58 +24,50 @@
   };
   var state = { status: "all", confidence: "all", search: "", tab: "answer", selectedId: null };
   var toastTimer = null;
+  var LIVE_GROUP = "Questions posées";
+  var BATCH_GROUP = "Questions du lot";
 
   function $(id) { return document.getElementById(id); }
-  function confKey(question) { return question.confidence || "unknown"; }
-  function asList(value) {
-    if (value === null || value === undefined) return [];
-    return Array.isArray(value) ? value : [value];
-  }
-  function answerText(question) { return asList(question.answer).join(" ou "); }
-  function normalize(text) {
-    return String(text).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-  }
-  function initials(text) {
-    return String(text).split(/[\s_\-.]+/).filter(Boolean).slice(0, 2)
-      .map(function (part) { return part[0]; }).join("").toUpperCase();
-  }
-  function formatDate(iso) {
-    var date = new Date(iso);
-    if (!iso || isNaN(date.getTime())) return iso || "";
-    var day = new Intl.DateTimeFormat("fr-CA", { day: "numeric", month: "long", year: "numeric" });
-    var time = new Intl.DateTimeFormat("fr-CA", { hour: "numeric", minute: "2-digit" });
-    return day.format(date) + ", " + time.format(date);
-  }
-  function decimal(number, digits) { return number.toFixed(digits).replace(".", ","); }
-  function tone(name) { return "t-" + name; }
-  function chip(text, toneName, extra) {
-    return el("span", { class: "chip " + tone(toneName) + (extra ? " " + extra : ""), text: text });
-  }
-  function avatar(text, toneName, size) {
-    var props = { class: "avatar " + tone(toneName), style: "--s:" + size + "px" };
-    if (text.length > 3) props.style += ";font-size:" + Math.round(size * 0.24) + "px";
-    return el("span", props, [text]);
-  }
-  function iconButton(name, label, onclick, extraClass) {
-    return el("button", { class: "round " + (extraClass || ""), type: "button", "aria-label": label, title: label, onclick: onclick }, [icon(name)]);
-  }
   function countBy(predicate) { return QUESTIONS.filter(predicate).length; }
+  function isLive(question) { return question.is_live === true; }
 
   /* ---------- Filtering ---------- */
-  function visibleQuestions() {
+  function matches(question, skip) {
+    if (skip !== "status" && state.status !== "all" && question.status !== state.status) return false;
+    if (skip !== "confidence" && state.confidence !== "all" && confKey(question) !== state.confidence) return false;
     var term = normalize(state.search.trim());
-    return QUESTIONS.filter(function (question) {
-      if (state.status !== "all" && question.status !== state.status) return false;
-      if (state.confidence !== "all" && confKey(question) !== state.confidence) return false;
-      if (!term) return true;
-      return normalize([question.id, question.question, question.family || "", answerText(question)].join(" ")).indexOf(term) >= 0;
-    });
+    if (!term) return true;
+    return normalize([question.id, question.question, question.family || "", answerText(question)].join(" ")).indexOf(term) >= 0;
+  }
+  function countWhere(skip, predicate) {
+    return QUESTIONS.filter(function (question) { return matches(question, skip) && predicate(question); }).length;
+  }
+  function visibleQuestions() {
+    var shown = QUESTIONS.filter(function (question) { return matches(question); });
+    return shown.filter(isLive).concat(shown.filter(function (question) { return !isLive(question); }));
+  }
+  function selectedQuestion() {
+    return QUESTIONS.filter(function (item) { return item.id === state.selectedId; })[0] || null;
+  }
+  function applyFilters() {
+    var open = state.selectedId;
+    if (open && !visibleQuestions().some(function (item) { return item.id === open; })) goList();
+    else renderAll();
+  }
+  function setFilter(key, value) { state[key] = value; applyFilters(); }
+  function setSearch(value, fromTopBar) {
+    state.search = value;
+    if ($("list-filter").value !== value) $("list-filter").value = value;
+    if (!DATA.live && $("batch-input").value !== value) $("batch-input").value = value;
+    $("batch-clear").hidden = DATA.live || !value;
+    if (fromTopBar && state.selectedId) goList();
+    else applyFilters();
   }
   function resetFilters() {
-    state.status = "all"; state.confidence = "all"; state.search = "";
-    $("list-filter").value = "";
-    renderAll();
+    state.status = "all"; state.confidence = "all";
+    setSearch("", false);
   }
+  function isFiltered() { return state.status !== "all" || state.confidence !== "all" || state.search.trim() !== ""; }
 
   /* ---------- Sidebar and header ---------- */
   function navItem(iconNode, label, active, onclick, trailing) {
@@ -94,20 +79,21 @@
     var statusNav = $("status-nav");
     clear(statusNav);
     statusNav.appendChild(navItem(icon("grid"), "Toutes", state.status === "all",
-      function () { state.status = "all"; renderAll(); }, el("span", { class: "count", text: String(QUESTIONS.length) })));
+      function () { setFilter("status", "all"); },
+      el("span", { class: "count", text: String(countWhere("status", function () { return true; })) })));
     Object.keys(STATUS).forEach(function (key) {
       statusNav.appendChild(navItem(icon(STATUS[key].icon), STATUS[key].plural, state.status === key,
-        function () { state.status = key; renderAll(); },
-        el("span", { class: "count", text: String(countBy(function (q) { return q.status === key; })) })));
+        function () { setFilter("status", key); },
+        el("span", { class: "count", text: String(countWhere("status", function (q) { return q.status === key; })) })));
     });
     var confNav = $("conf-nav");
     clear(confNav);
     confNav.appendChild(navItem(el("span", { class: "dot " + tone("gray") }), "Toute confiance", state.confidence === "all",
-      function () { state.confidence = "all"; renderAll(); }));
+      function () { setFilter("confidence", "all"); }));
     Object.keys(CONF).forEach(function (key) {
       confNav.appendChild(navItem(el("span", { class: "dot " + tone(CONF[key].tone) }), CONF[key].label, state.confidence === key,
-        function () { state.confidence = key; renderAll(); },
-        el("span", { text: String(countBy(function (q) { return confKey(q) === key; })) })));
+        function () { setFilter("confidence", key); },
+        el("span", { text: String(countWhere("confidence", function (q) { return confKey(q) === key; })) })));
     });
     var toggle = $("theme-toggle");
     clear(toggle);
@@ -115,7 +101,7 @@
     toggle.appendChild(document.createTextNode(D.isDark() ? "Thème clair" : "Thème sombre"));
   }
   function renderHeader() {
-    $("run-meta").textContent = "Lot " + (DATA.run_id || "?") + " · " + formatDate(DATA.generated_at);
+    $("run-meta").textContent = DATA.run_id ? "Lot " + DATA.run_id + " · " + formatDate(DATA.generated_at) : "Questions posées en direct";
     var box = $("avatars");
     clear(box);
     Object.keys(STATUS).forEach(function (key) {
@@ -132,6 +118,13 @@
     total.setAttribute("aria-label", "Questions : " + QUESTIONS.length);
     total.setAttribute("title", "Questions");
     box.appendChild(total);
+    var accuracy = $("run-accuracy");
+    clear(accuracy);
+    Object.keys(CONF).forEach(function (key) {
+      var row = ACCURACY ? ACCURACY[key] : null;
+      if (!row || !row.n) return;
+      accuracy.appendChild(chip(CONF[key].label + " : " + row.correct + "/" + row.n + " (" + Math.round(row.accuracy * 100) + " %)", CONF[key].tone));
+    });
   }
 
   /* ---------- Detail ---------- */
@@ -283,15 +276,17 @@
   }
 
   /* ---------- Right rail ---------- */
+  function toast(text, isError) {
+    var node = $("toast");
+    node.textContent = text;
+    node.className = "toast" + (isError ? " error" : "");
+    node.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { node.hidden = true; }, isError ? TOAST_ERROR_MS : TOAST_MS);
+  }
   function copyLink() {
-    var shown = function () {
-      var toast = $("toast");
-      toast.hidden = false;
-      clearTimeout(toastTimer);
-      toastTimer = setTimeout(function () { toast.hidden = true; }, TOAST_MS);
-    };
     try {
-      navigator.clipboard.writeText(location.href).then(shown, function () {});
+      navigator.clipboard.writeText(location.href).then(function () { toast("Lien de la question copié"); }, function () {});
     } catch (error) { /* clipboard unavailable: the URL bar still holds the link */ }
   }
   function renderScore() {
@@ -319,7 +314,7 @@
   function renderConfidencePanel() {
     var box = $("conf-panel");
     clear(box);
-    box.appendChild(sectionHead(ACCURACY ? "Exactitude par confiance" : "Questions par confiance", function () { state.confidence = "all"; renderAll(); }));
+    box.appendChild(sectionHead(ACCURACY ? "Exactitude par confiance" : "Questions par confiance", function () { setFilter("confidence", "all"); }));
     var list = el("div", { class: "list" });
     Object.keys(CONF).forEach(function (key) {
       var total = countBy(function (q) { return confKey(q) === key; });
@@ -327,7 +322,7 @@
       var sub = row ? row.correct + " sur " + row.n + " correctes" : total + " question" + (total > 1 ? "s" : "");
       var right = row ? Math.round(row.accuracy * 100) + " %" : ACCURACY ? "–" : String(total);
       list.appendChild(el("button", { class: "list-item", type: "button", "aria-pressed": String(state.confidence === key),
-        onclick: function () { state.confidence = key; renderAll(); } }, [
+        onclick: function () { setFilter("confidence", key); } }, [
         avatar(CONF[key].short, CONF[key].tone, 48),
         el("div", { class: "grow" }, [el("div", { class: "conf-name", text: "Confiance " + CONF[key].label.toLowerCase() }), el("div", { class: "conf-sub", text: sub })]),
         el("span", { class: "conf-name", text: right })
@@ -336,64 +331,105 @@
     box.appendChild(list);
     if (ACCURACY) box.appendChild(el("p", { class: "claim", text: CLAIM }));
   }
-  function renderQuestionList(visible) {
-    var box = $("list-panel");
-    clear(box);
-    box.appendChild(sectionHead("Questions · " + visible.length + " sur " + QUESTIONS.length, resetFilters));
-    var list = el("div", { class: "list q-list" });
-    visible.forEach(function (question) {
-      var status = STATUS[question.status] || { label: String(question.status), tone: "gray" };
-      var verdict = DATA.is_scored && typeof question.is_correct === "boolean"
-        ? { text: question.is_correct ? "Correcte" : "Incorrecte", cls: question.is_correct ? "ok-text" : "bad-text" }
-        : { text: "Confiance " + CONF[confKey(question)].label.toLowerCase(), cls: "muted" };
-      list.appendChild(el("button", { class: "list-item", type: "button", "data-id": question.id,
-        "aria-current": String(question.id === state.selectedId), onclick: function () { select(question.id, true); } }, [
-        avatar(question.id.toUpperCase(), CONF[confKey(question)].tone, 48),
-        el("div", { class: "grow" }, [
-          el("div", { class: "list-title clamp", text: question.question }),
-          el("div", { class: "list-sub" }, [
-            el("span", { class: tone(status.tone), style: "color:var(--tf)", text: status.label }),
-            el("span", { class: verdict.cls, text: verdict.text })
-          ])
+  /* ---------- Home list ---------- */
+  function verdictNode(question) {
+    if (!DATA.is_scored || typeof question.is_correct !== "boolean") return null;
+    return el("span", { class: "row " + (question.is_correct ? "ok-text" : "bad-text"), title: question.is_correct ? "Réponse correcte" : "Réponse incorrecte" }, [
+      icon(question.is_correct ? "check" : "error", "sm"),
+      el("span", { text: question.is_correct ? "Correcte" : "Incorrecte" })
+    ]);
+  }
+  function caseRow(question) {
+    var status = STATUS[question.status] || { label: String(question.status), tone: "gray" };
+    var conf = CONF[confKey(question)];
+    return el("button", { class: "case-row", type: "button", "data-id": question.id, onclick: function () { select(question.id); } }, [
+      avatar(question.id.toUpperCase(), conf.tone, 48),
+      el("div", { class: "grow" }, [
+        el("div", { class: "case-question clamp", text: question.question }),
+        el("div", { class: "case-meta" }, [
+          chip(status.label, status.tone),
+          chip("Confiance " + conf.label.toLowerCase(), conf.tone),
+          verdictNode(question),
+          question.family ? el("span", { class: "muted", text: question.family }) : null
         ])
-      ]));
-    });
-    if (!visible.length) list.appendChild(el("p", { class: "empty-line", text: "Aucune question ne correspond aux filtres." }));
-    box.appendChild(list);
+      ])
+    ]);
+  }
+  function caseGroup(title, rows) {
+    return el("div", { class: "case-group" }, [
+      title ? el("h2", { class: "group-title", text: title + " · " + rows.length }) : null,
+      el("div", { class: "list" }, rows.map(caseRow))
+    ]);
+  }
+  function emptyList() {
+    if (!QUESTIONS.length) {
+      return el("div", { class: "empty-state" }, [
+        icon("chat"), el("h2", { text: "Aucune question pour l'instant" }),
+        el("p", { text: "Posez une question aux archives depuis la barre du haut." })
+      ]);
+    }
+    return el("div", { class: "empty-state" }, [
+      icon("search-off"), el("h2", { text: "Aucun cas ne correspond" }),
+      el("p", { text: "Aucune question ne correspond aux filtres actifs." }),
+      el("button", { class: "outline-btn", type: "button", onclick: resetFilters, text: "Réinitialiser les filtres" })
+    ]);
+  }
+  function renderList(visible) {
+    var box = $("case-list");
+    clear(box);
+    box.appendChild(el("div", { class: "section-head" }, [
+      el("span", { text: "Cas · " + visible.length + " sur " + QUESTIONS.length }),
+      isFiltered() ? el("button", { class: "pill", type: "button", onclick: resetFilters, text: "Réinitialiser" }) : null
+    ]));
+    if (!visible.length) { box.appendChild(emptyList()); return; }
+    var live = visible.filter(isLive);
+    var rest = visible.filter(function (question) { return !isLive(question); });
+    if (live.length) box.appendChild(caseGroup(LIVE_GROUP, live));
+    if (rest.length) box.appendChild(caseGroup(live.length ? BATCH_GROUP : null, rest));
   }
 
   /* ---------- Orchestration ---------- */
-  function renderAll() {
-    var question = QUESTIONS.filter(function (item) { return item.id === state.selectedId; })[0] || QUESTIONS[0];
-    renderNav();
-    renderHeader();
-    renderScore();
-    renderConfidencePanel();
-    renderQuestionList(visibleQuestions());
-    renderDetail(question);
-    renderEvidence(question);
-    $("prev").disabled = $("next").disabled = !visibleQuestions().length;
-    var tabs = document.querySelectorAll(".tab");
-    Array.prototype.forEach.call(tabs, function (tab) {
+  function renderTabs(question) {
+    Array.prototype.forEach.call(document.querySelectorAll(".tab"), function (tab) {
       var isDocs = tab.getAttribute("data-tab") === "documents";
       tab.setAttribute("aria-pressed", String(state.tab === tab.getAttribute("data-tab")));
       tab.textContent = isDocs ? "Documents consultés (" + (question.retrieved || []).length + ")" : "Réponse";
     });
   }
-  function select(id, scrollToDetail, fromHash) {
+  function renderAll() {
+    var question = selectedQuestion();
+    renderNav();
+    renderHeader();
+    renderScore();
+    renderConfidencePanel();
+    $("list-view").hidden = question !== null;
+    $("detail-view").hidden = question === null;
+    if (!question) { renderList(visibleQuestions()); return; }
+    renderDetail(question);
+    renderEvidence(question);
+    renderTabs(question);
+  }
+  function setHash(id) {
+    var target = id ? "#" + encodeURIComponent(id) : "";
+    if (location.hash !== target) location.hash = target;
+  }
+  function select(id) {
     state.selectedId = id;
-    if (!fromHash && location.hash !== "#" + encodeURIComponent(id)) history.replaceState(null, "", "#" + encodeURIComponent(id));
+    setHash(id);
     renderAll();
-    if (scrollToDetail && window.matchMedia(WIDE_RAIL_QUERY).matches) $("main").scrollIntoView({ block: "start" });
+    window.scrollTo(0, 0);
+  }
+  function goList() {
+    state.selectedId = null;
+    setHash("");
+    renderAll();
   }
   function move(step) {
     var visible = visibleQuestions();
-    if (!visible.length) return;
+    if (!visible.length || !state.selectedId) return;
     var index = visible.findIndex(function (item) { return item.id === state.selectedId; });
     var next = index < 0 ? 0 : (index + step + visible.length) % visible.length;
-    select(visible[next].id, false);
-    var current = document.querySelector('.q-list [aria-current="true"]');
-    if (current) current.scrollIntoView({ block: "nearest" });
+    select(visible[next].id);
   }
   function switchTheme() {
     D.toggleTheme();
@@ -405,50 +441,17 @@
     catch (error) { return ""; }
   }
   function knownId(id) { return QUESTIONS.some(function (item) { return item.id === id; }); }
-
-  /* ---------- Batch search ---------- */
-  function searchBatch(query) {
-    var tokens = normalize(query).split(/[^a-z0-9]+/).filter(function (token) { return token.length > 1; });
-    if (!tokens.length) return [];
-    var needed = Math.max(1, Math.ceil(tokens.length / 2));
-    return QUESTIONS.map(function (question) {
-      var haystack = normalize([question.id, question.question, question.family || "", answerText(question)].join(" "));
-      var score = tokens.filter(function (token) { return haystack.indexOf(token) >= 0; }).length;
-      return { question: question, score: score };
-    }).filter(function (hit) { return hit.score >= needed; })
-      .sort(function (a, b) { return b.score - a.score; }).slice(0, HIT_LIMIT);
+  function onHashChange() {
+    var id = hashId();
+    var next = knownId(id) ? id : null;
+    if (next === state.selectedId) return;
+    state.selectedId = next;
+    renderAll();
   }
-  function hitCard(question) {
-    var summary = question.status === "not_found" ? "Aucune réponse trouvée dans les documents consultés."
-      : question.status === "conflict" ? "Les sources se contredisent : " + answerText(question)
-      : answerText(question) || "—";
-    return el("div", { class: "hit" }, [
-      el("div", { class: "hit-answer", text: summary }),
-      el("div", { class: "hit-question clamp", text: question.id + " · " + question.question }),
-      el("div", { class: "row wrap" }, [
-        chip("Confiance " + CONF[confKey(question)].label.toLowerCase(), CONF[confKey(question)].tone),
-        el("button", { class: "outline-btn", type: "button", onclick: function () {
-          state.status = "all"; state.confidence = "all"; state.search = ""; state.tab = "answer";
-          $("list-filter").value = "";
-          select(question.id, true);
-        } }, ["Ouvrir la question " + question.id.toUpperCase(), icon("arrow-forward", "sm")])
-      ])
-    ]);
-  }
-  function renderBatchResults() {
-    var query = $("batch-input").value.trim();
-    var box = $("batch-results");
-    clear(box);
-    $("batch-clear").hidden = !query;
-    box.hidden = !query;
-    if (!query) return;
-    var hits = searchBatch(query);
-    if (!hits.length) {
-      box.appendChild(el("p", { class: "thread-title", text: "Aucun passage pertinent dans ce lot. Essayez un nom de projet, de firme ou de document." }));
-      return;
-    }
-    box.appendChild(el("p", { class: "thread-title", text: hits.length + " question" + (hits.length > 1 ? "s" : "") + " correspondante" + (hits.length > 1 ? "s" : "") }));
-    hits.forEach(function (hit) { box.appendChild(hitCard(hit.question)); });
+  function addQuestion(question) {
+    QUESTIONS.push(question);
+    state.status = "all"; state.confidence = "all";
+    setSearch("", false);
   }
 
   /* ---------- Wiring ---------- */
@@ -461,35 +464,36 @@
     });
     $("prev").addEventListener("click", function () { move(-1); });
     $("next").addEventListener("click", function () { move(1); });
+    $("back").addEventListener("click", goList);
     $("theme-toggle").addEventListener("click", switchTheme);
-    $("list-filter").addEventListener("input", function (event) { state.search = event.target.value; renderAll(); });
-    $("batch-input").addEventListener("input", renderBatchResults);
-    $("batch-form").addEventListener("submit", function (event) { event.preventDefault(); renderBatchResults(); });
-    $("batch-clear").addEventListener("click", function () { $("batch-input").value = ""; renderBatchResults(); $("batch-input").focus(); });
+    $("list-filter").addEventListener("input", function (event) { setSearch(event.target.value, false); });
+    if (!DATA.live) {
+      $("batch-input").addEventListener("input", function (event) { setSearch(event.target.value, true); });
+      $("batch-form").addEventListener("submit", function (event) { event.preventDefault(); if (state.selectedId) goList(); });
+      $("batch-clear").addEventListener("click", function () { setSearch("", true); $("batch-input").focus(); });
+    }
     $("lightbox").addEventListener("click", function (event) { if (event.target === this) this.close(); });
     document.addEventListener("keydown", function (event) {
-      if (event.altKey || event.ctrlKey || event.metaKey || $("lightbox").open) return;
+      if (event.altKey || event.ctrlKey || event.metaKey || $("lightbox").open || !state.selectedId) return;
       if (event.target.matches && event.target.matches('input, textarea, select, [contenteditable="true"]')) return;
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
         move(event.key === "ArrowUp" ? -1 : 1);
       }
     });
-    window.addEventListener("hashchange", function () {
-      var id = hashId();
-      if (knownId(id)) select(id, false, true);
-    });
+    window.addEventListener("hashchange", onHashChange);
   }
 
-  if (!QUESTIONS.length) {
+  if (!QUESTIONS.length && !DATA.live) {
     $("app").replaceWith(el("div", { class: "empty" }, [
       el("h2", { text: "Aucune question à afficher" }),
       el("p", { text: "Cette exécution ne contient aucune réponse à vérifier." })
     ]));
     return;
   }
+  window.ViewerApp = { live: DATA.live === true, addQuestion: addQuestion, openQuestion: select, toast: toast };
   wire();
   var initial = hashId();
-  var known = knownId(initial);
-  select(known ? initial : QUESTIONS[0].id, false, known);
+  state.selectedId = knownId(initial) ? initial : null;
+  renderAll();
 })();
