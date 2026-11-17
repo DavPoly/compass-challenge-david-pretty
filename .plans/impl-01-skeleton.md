@@ -1,6 +1,6 @@
 # Step 01: walking skeleton
 
-**Status:** in-progress
+**Status:** done
 **Parent:** [impl-00-roadmap.md](impl-00-roadmap.md), [global-architecture.md](global-architecture.md)
 **Orchestrator branch `B`:** `feat/skeleton` (cut from `main`)
 **BASE:** `bb65fa4c4855a1b2328605f3b6ceec1510f1b457`
@@ -246,20 +246,35 @@ so tests needing PDFs read from the kit's
 - 2026-11-16 (review): duplicate-id test discriminates keep-first vs
   keep-last but not the dedupe's presence — AnswerWriter dedupes too
   and the workers race for the line; ordering is not exposed.
+- 2026-11-16 (V): ran on feat/skeleton @ c5b37ac with the real LLM:
+  e2e exit 0, 20/20 lines, key shape exact, all citations in corpus/,
+  14.6 s wall (60-question extrapolation ~44 s, bound 10 min); 9
+  answered / 10 not_found / 1 conflict; no retries, repairs or schema
+  fallbacks in the whole run.
+- 2026-11-16 (V): score.py --details baseline — 26.60/45: exactitude
+  15/30 (8/16), fiabilité 8.81/10 (statuses 4/4, 7 unjustified
+  abstentions), citations 2.79/5 (avg over 17). By type: direct 6/6,
+  multi_hop 0/4, aggregation 1/3, superseded 1/3, conflict 1/1,
+  unanswerable 3/3.
+- 2026-11-16 (V): robustness — missing env / questions / corpus all
+  exit 1 with problem+fix messages (corpus case tested via a %TEMP%
+  shadow repo; REPO_ROOT is __file__-based so cwd tricks cannot trigger
+  it). A malformed question line is tolerant by design: warning +
+  not_found, exit 0 — the plan's verification bullet implying exit 1
+  for that case was wrong, the acceptance criteria are correct.
+- 2026-11-16 (V): dominant gap is retrieval depth, not answer
+  formatting: SEARCH_TOP_K=8 < gold-doc counts for s20 (17) and s10
+  (12); s10 answers confidently with ~53% of the gold value — the
+  riskiest failure mode in this run. Step 02 should raise top-k, add
+  dense vectors and multi-hop retrieval before touching formatting.
 
-## Resume point (2026-11-16, pre-commit review complete)
+## Resume point (2026-11-16, V complete — step done)
 
-Fix round 1, round 2 and the review fix round merged on `feat/skeleton`
-(tip 52d2edf; 239 tests, ruff + format + mypy --strict green).
-Pre-commit review (reviewer + quality) ran on bb65fa4..52d2edf:
-nothing blocking. One fix round fix/review-findings (6 commits, 281
-lines) merged as 52d2edf: teardown close under the read lock + late
-write guard, scroll empty-page break, run-level duplicate-id test,
-dash/exit-code single-sourcing, renames (AMBIGUOUS_DAY_MONTH_LIMIT,
-LOG_DOC_IDS_DIFFER, MSG_IO_ERROR), extract_identifiers without full
-metadata. Declined: is_opened rewrite (flag form is behavior-tested),
-test-factory conftest consolidation + kit_samples fixture (deferred),
-try-each-JSON-object (NIT, low probability). Next:
-- V: end-to-end run + robustness checks — needs the user's `LLM_*`
-  variables.
-- Push only on explicit approval.
+All impl-01 work merged on `feat/skeleton`. T0–T5, fix round 1,
+round 2, review fix round and V complete: 239 tests, ruff +
+format + mypy --strict green, e2e + robustness verified, score.py
+baseline 26.60/45 recorded in the decisions log above. Nothing
+pushed. Next:
+- Push `feat/skeleton` to the remote on explicit approval.
+- Step 02 per impl-00-roadmap: dense vectors and retrieval depth
+  (SEARCH_TOP_K vs s10/s20 gold counts), multi-hop retrieval.
