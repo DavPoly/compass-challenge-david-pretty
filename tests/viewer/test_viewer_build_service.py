@@ -538,3 +538,28 @@ def test_steps_get_french_labels_and_unknown_steps_keep_their_name(
         ("mystery", "mystery"),
     ]
     assert view.steps[0].detail == "3 extraits"
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("superseded", "version en vigueur"),
+        ("answered", "répondue"),
+        ("low", "confiance faible"),
+        ("8 extraits (superseded)", "8 extraits (version en vigueur)"),
+        ("3 extraits", "3 extraits"),
+        ("brouillon 1", "brouillon 1"),
+        (None, None),
+    ],
+)
+def test_legacy_raw_step_details_become_french(
+    tmp_path: Path, raw: str | None, expected: str | None
+) -> None:
+    trace = make_trace("q1", ["x"])
+    trace.steps = [
+        StepRecord(step=PipelineStep.ROUTE, detail=raw, elapsed_s=0.1)
+    ]
+
+    view = question_view_from_trace(trace, _live_request(tmp_path))
+
+    assert view.steps[0].detail == expected

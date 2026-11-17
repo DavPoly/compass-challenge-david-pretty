@@ -12,7 +12,7 @@ from typing import Literal, Protocol
 from pydantic import ValidationError
 
 from archive.common.constants import PDF_SUFFIX
-from archive.common.step_constants import STEP_LABELS
+from archive.common.step_constants import DETAIL_LABELS, STEP_LABELS
 from archive.pipeline.pipeline_constants import TRACE_SUFFIX
 from archive.pipeline.trace_gateway import trace_filename
 from archive.pipeline.trace_model import (
@@ -31,6 +31,7 @@ from archive.viewer.viewer_constants import (
     INDEX_FILENAME,
     INLINE_ASSETS,
     ISSUE_SEPARATOR,
+    LEGACY_RECIPE_DETAIL,
     LOG_BUDGET_EXHAUSTED,
     LOG_DOC_OUTSIDE_CORPUS,
     LOG_RENDER_FAILED,
@@ -312,11 +313,22 @@ def _step_views(records: Iterable[StepRecord]) -> list[StepView]:
         StepView(
             step=str(record.step),
             label=STEP_LABELS.get(str(record.step), str(record.step)),
-            detail=record.detail,
+            detail=_detail_label(record.detail),
             elapsed_s=record.elapsed_s,
         )
         for record in records
     ]
+
+
+def _detail_label(detail: str | None) -> str | None:
+    """French wording of a step detail recorded as a raw code."""
+    if detail is None:
+        return None
+    if detail in DETAIL_LABELS:
+        return DETAIL_LABELS[detail]
+    return LEGACY_RECIPE_DETAIL.sub(
+        lambda found: f"({DETAIL_LABELS.get(found[1], found[1])})", detail
+    )
 
 
 def _retrieved_views(chunks: Iterable[RetrievedChunk]) -> list[RetrievedView]:

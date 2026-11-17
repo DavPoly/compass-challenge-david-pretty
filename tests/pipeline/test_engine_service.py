@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from archive.common.config import AppConfig
+from archive.common.step_constants import CONFIDENCE_LABELS, STATUS_LABELS
 from archive.common.step_model import PipelineStep, StepEvent
 from archive.pipeline.engine import engine_service
 from archive.pipeline.engine.engine_service import (
@@ -41,9 +42,11 @@ def test_answer_one_emits_validate_then_ground(
     steps = [event.step for event in events]
     assert steps[:2] == [PipelineStep.ROUTE, PipelineStep.RETRIEVE]
     assert steps[-2:] == [PipelineStep.VALIDATE, PipelineStep.GROUND]
-    assert events[-2].detail == AnswerStatus.ANSWERED.value
+    assert events[-2].detail == STATUS_LABELS[AnswerStatus.ANSWERED.value]
     assert parts.report is not None
-    assert events[-1].detail == parts.report.confidence.value
+    assert (
+        events[-1].detail == CONFIDENCE_LABELS[parts.report.confidence.value]
+    )
 
 
 def test_invalid_question_emits_no_step(
