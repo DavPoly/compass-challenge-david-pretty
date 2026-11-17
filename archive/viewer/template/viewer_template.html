@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Vérifier les réponses</title>
+<style>
+:root {
+  --bg: #f5f6f8; --surface: #ffffff; --surface-alt: #eef0f4;
+  --text: #1c2330; --text-muted: #566074; --border: #d5d9e2;
+  --accent: #2b5fa8; --accent-bg: #e3ecf8;
+  --ok: #17663a; --ok-bg: #e0f3e7;
+  --bad: #a31f2c; --bad-bg: #fbe5e7;
+  --warn: #7a4b00; --warn-bg: #fdf0d2; --warn-border: #e0b04a;
+  --neutral: #4a5366; --neutral-bg: #e6e9ef;
+  --shadow: 0 1px 3px rgba(20, 30, 50, .12);
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12161d; --surface: #1b212b; --surface-alt: #252c38;
+    --text: #e6e9ef; --text-muted: #a3adc0; --border: #3a4252;
+    --accent: #8db6ee; --accent-bg: #23344f;
+    --ok: #7fd7a0; --ok-bg: #173826;
+    --bad: #ff9aa4; --bad-bg: #4a1d24;
+    --warn: #f3cb7b; --warn-bg: #43330f; --warn-border: #8a6a1e;
+    --neutral: #b9c1d1; --neutral-bg: #2d3543;
+    --shadow: 0 1px 3px rgba(0, 0, 0, .5);
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--text); font: 15px/1.5 var(--font);
+  overflow-x: hidden;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+h1, h2, h3 { margin: 0; line-height: 1.25; }
+
+header.top {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 14px 20px;
+}
+.top-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+.top h1 { font-size: 1.25rem; }
+.meta { color: var(--text-muted); font-size: .85rem; }
+.summary { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
+.stat { background: var(--surface-alt); border-radius: 8px; padding: 4px 10px; font-size: .85rem; }
+.stat b { font-size: 1rem; }
+table.acc { border-collapse: collapse; margin-top: 12px; font-size: .85rem; }
+table.acc caption { text-align: left; font-weight: 600; padding-bottom: 4px; }
+table.acc th, table.acc td { padding: 3px 12px 3px 0; text-align: left; }
+table.acc th { color: var(--text-muted); font-weight: 500; }
+.claim { margin: 8px 0 0; color: var(--text-muted); font-size: .85rem; }
+
+main { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; gap: 16px; padding: 16px 20px; align-items: start; }
+.sidebar { position: sticky; top: 8px; max-height: calc(100vh - 16px); display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; min-width: 0; }
+.filters { padding: 10px; border-bottom: 1px solid var(--border); display: grid; gap: 6px; }
+.filter-row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.filter-row .label { font-size: .75rem; color: var(--text-muted); margin-right: 2px; }
+.chip-btn { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 2px 10px; font-size: .78rem; }
+.chip-btn[aria-pressed="true"] { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.qlist { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
+.qitem { display: block; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--border); padding: 9px 12px; }
+.qitem:hover { background: var(--surface-alt); }
+.qitem[aria-current="true"] { background: var(--accent-bg); box-shadow: inset 3px 0 0 var(--accent); }
+.qitem .qid { font-weight: 700; font-size: .8rem; color: var(--text-muted); }
+.qitem .qtext { display: block; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; margin: 2px 0 5px; font-size: .88rem; }
+.qbadges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.no-match { padding: 14px; color: var(--text-muted); }
+
+.badge { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 1px 9px; font-size: .75rem; font-weight: 600; background: var(--neutral-bg); color: var(--neutral); white-space: nowrap; }
+.badge.ok { background: var(--ok-bg); color: var(--ok); }
+.badge.bad { background: var(--bad-bg); color: var(--bad); }
+.badge.warn { background: var(--warn-bg); color: var(--warn); }
+.badge.info { background: var(--accent-bg); color: var(--accent); }
+
+.detail { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; min-width: 0; box-shadow: var(--shadow); }
+.detail > * + * { margin-top: 16px; }
+.question { font-size: 1.05rem; color: var(--text-muted); }
+.question .qid { font-weight: 700; margin-right: 8px; color: var(--text); }
+.answer-box { border-left: 4px solid var(--accent); background: var(--surface-alt); padding: 12px 16px; border-radius: 0 8px 8px 0; }
+.answer-box .label, .section-title { font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); font-weight: 700; margin-bottom: 4px; }
+.answer-text { font-size: 1.5rem; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+.answer-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.answer-chip { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 4px 12px; font-size: 1.15rem; font-weight: 600; overflow-wrap: anywhere; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.callout { border-radius: 8px; padding: 10px 14px; border: 1px solid var(--border); background: var(--surface-alt); }
+.callout.warn { background: var(--warn-bg); border-color: var(--warn-border); color: var(--warn); }
+.callout.ok { background: var(--ok-bg); border-color: var(--ok); color: var(--ok); }
+.callout.bad { background: var(--bad-bg); border-color: var(--bad); color: var(--bad); }
+.callout .title { font-weight: 700; margin-bottom: 2px; }
+.callout ul { margin: 4px 0 0; padding-left: 20px; }
+.why { border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; }
+.why summary, .docs summary { cursor: pointer; font-weight: 600; }
+.why ul { margin: 6px 0 2px; padding-left: 20px; }
+
+.evidence-grid { display: grid; gap: 12px; margin-top: 8px; }
+.evidence-grid.two-col { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.card { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--surface); display: flex; flex-direction: column; }
+.card.verified { border-top: 4px solid var(--ok); }
+.card.unverified { border-top: 4px solid var(--bad); }
+.card.other { border-top: 4px solid var(--neutral); }
+.card-head { padding: 10px 14px 0; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; justify-content: space-between; }
+.doc-id { font-weight: 700; overflow-wrap: anywhere; }
+.page-no { color: var(--text-muted); font-size: .85rem; font-weight: 400; }
+.card-body { padding: 8px 14px 12px; display: grid; gap: 8px; }
+blockquote { margin: 0; padding: 6px 12px; border-left: 3px solid var(--border); color: var(--text); font-style: italic; overflow-wrap: anywhere; white-space: pre-wrap; }
+blockquote.struck { text-decoration: line-through; color: var(--text-muted); }
+.value { font-weight: 600; }
+.value.big { font-size: 1.4rem; }
+.value .k { color: var(--text-muted); font-weight: 500; font-size: .8rem; margin-right: 6px; }
+.thumb { display: block; width: 100%; border: 0; padding: 0; background: var(--surface-alt); border-top: 1px solid var(--border); }
+.thumb img { display: block; width: 100%; height: auto; max-height: 260px; object-fit: contain; }
+
+table.docs-table { width: 100%; border-collapse: collapse; font-size: .85rem; margin-top: 6px; }
+table.docs-table th, table.docs-table td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+table.docs-table th { color: var(--text-muted); font-weight: 600; }
+.empty { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+.empty h2 { color: var(--text); margin-bottom: 6px; }
+
+dialog.lightbox { border: 0; padding: 0; background: transparent; max-width: 96vw; max-height: 96vh; }
+dialog.lightbox::backdrop { background: rgba(0, 0, 0, .8); }
+.lightbox .frame { position: relative; background: var(--surface); border-radius: 8px; padding: 8px; }
+.lightbox img { display: block; max-width: calc(96vw - 16px); max-height: calc(96vh - 60px); margin: 0 auto; }
+.lightbox .bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 0 4px 8px; }
+.lightbox .close { border: 1px solid var(--border); background: var(--surface-alt); border-radius: 6px; padding: 4px 12px; }
+
+@media (max-width: 759px) {
+  main { grid-template-columns: minmax(0, 1fr); padding: 12px; }
+  .sidebar { position: static; max-height: 40vh; }
+  .evidence-grid.two-col { grid-template-columns: minmax(0, 1fr); }
+  .detail { padding: 14px; }
+  .answer-text { font-size: 1.25rem; }
+  header.top { padding: 12px; }
+}
+</style>
+</head>
+<body>
+<header class="top" id="top"></header>
+<main id="main">
+  <nav class="sidebar" aria-label="Liste des questions">
+    <div class="filters" id="filters"></div>
+    <ul class="qlist" id="qlist"></ul>
+  </nav>
+  <section class="detail" id="detail" aria-live="polite"></section>
+</main>
+<dialog class="lightbox" id="lightbox" aria-label="Page du document"></dialog>
+<script id="viewer-data" type="application/json">__VIEWER_DATA__</script>
+<script>
+(function () {
+  "use strict";
+  var DATA = JSON.parse(document.getElementById("viewer-data").textContent);
+  var QUESTIONS = DATA.questions || [];
+
+  var STATUS_LABEL = { answered: "Répondue", not_found: "Introuvable", conflict: "Conflit" };
+  var STATUS_CLASS = { answered: "info", not_found: "", conflict: "warn" };
+  var CONF_LABEL = { high: "Confiance élevée", medium: "Confiance moyenne", low: "Confiance faible", unknown: "Confiance inconnue" };
+  var CONF_CLASS = { high: "ok", medium: "warn", low: "bad", unknown: "" };
+  var EVIDENCE_STATE = {
+    verified: { cls: "ok", label: "Citation vérifiée" },
+    unverified: { cls: "bad", label: "Citation absente du document" },
+    not_located: { cls: "", label: "Vérifiée, non localisée sur la page" },
+    not_rendered: { cls: "", label: "Image non générée" }
+  };
+
+  var filters = { confidence: null, status: null };
+  var selectedId = null;
+
+  /* ---------- DOM helpers (text only, never innerHTML) ---------- */
+  function el(tag, props, children) {
+    var node = document.createElement(tag);
+    Object.keys(props || {}).forEach(function (key) {
+      if (key === "text") node.textContent = props[key];
+      else if (key === "class") node.className = props[key];
+      else if (key.indexOf("on") === 0) node.addEventListener(key.slice(2), props[key]);
+      else node.setAttribute(key, props[key]);
+    });
+    (children || []).forEach(function (child) {
+      if (child) node.appendChild(child);
+    });
+    return node;
+  }
+  function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+  function asList(value) {
+    if (value === null || value === undefined) return [];
+    return Array.isArray(value) ? value : [value];
+  }
+  function confKey(question) { return question.confidence || "unknown"; }
+  function badge(text, cls, label) {
+    return el("span", { class: "badge " + (cls || ""), text: text, "aria-label": label || text });
+  }
+  function statusBadge(question) {
+    var label = STATUS_LABEL[question.status] || question.status;
+    return badge(label, STATUS_CLASS[question.status], "Statut : " + label);
+  }
+  function confBadge(question) {
+    var label = CONF_LABEL[confKey(question)];
+    return badge(label, CONF_CLASS[confKey(question)], label);
+  }
+  function correctMark(question) {
+    if (!DATA.is_scored || question.is_correct === null || question.is_correct === undefined) return null;
+    return question.is_correct
+      ? badge("✓", "ok", "Réponse correcte")
+      : badge("✗", "bad", "Réponse incorrecte");
+  }
+
+  /* ---------- Header ---------- */
+  function renderHeader() {
+    var top = document.getElementById("top");
+    var summary = DATA.summary || { total: QUESTIONS.length, by_status: {}, by_confidence: {} };
+    top.appendChild(el("div", { class: "top-row" }, [
+      el("h1", { text: "Vérifier les réponses" }),
+      el("span", { class: "meta", text: "Exécution " + (DATA.run_id || "?") + " · " + (DATA.generated_at || "") })
+    ]));
+    var strip = el("div", { class: "summary", role: "list" });
+    function stat(label, count) {
+      strip.appendChild(el("span", { class: "stat", role: "listitem" }, [
+        el("b", { text: String(count || 0) }), el("span", { text: " " + label })
+      ]));
+    }
+    stat("questions", summary.total);
+    Object.keys(STATUS_LABEL).forEach(function (key) {
+      stat(STATUS_LABEL[key].toLowerCase(), (summary.by_status || {})[key]);
+    });
+    Object.keys(CONF_LABEL).forEach(function (key) {
+      stat(CONF_LABEL[key].toLowerCase(), (summary.by_confidence || {})[key]);
+    });
+    top.appendChild(strip);
+    if (DATA.is_scored && summary.accuracy_by_confidence) top.appendChild(accuracyTable(summary.accuracy_by_confidence));
+  }
+  function accuracyTable(accuracy) {
+    var table = el("table", { class: "acc" }, [
+      el("caption", { text: "Exactitude par niveau de confiance" }),
+      el("thead", {}, [el("tr", {}, ["Confiance", "Questions", "Correctes", "Exactitude"].map(function (name) {
+        return el("th", { scope: "col", text: name });
+      }))])
+    ]);
+    var body = el("tbody");
+    Object.keys(CONF_LABEL).forEach(function (key) {
+      var row = accuracy[key];
+      if (!row) return;
+      var percent = row.accuracy === null || row.accuracy === undefined ? "–" : Math.round(row.accuracy * 100) + " %";
+      body.appendChild(el("tr", {}, [
+        el("td", {}, [badge(CONF_LABEL[key], CONF_CLASS[key])]),
+        el("td", { text: String(row.n) }), el("td", { text: String(row.correct) }), el("td", { text: percent })
+      ]));
+    });
+    table.appendChild(body);
+    var wrap = el("div", {}, [table, el("p", { class: "claim", text: "Les réponses à confiance élevée sont fiables ; relisez en priorité celles à confiance faible." })]);
+    return wrap;
+  }
+
+  /* ---------- Filters and list ---------- */
+  function filterRow(label, key, labels) {
+    var row = el("div", { class: "filter-row", role: "group", "aria-label": "Filtrer par " + label }, [el("span", { class: "label", text: label })]);
+    Object.keys(labels).forEach(function (value) {
+      var button = el("button", { class: "chip-btn", type: "button", text: labels[value], "aria-pressed": String(filters[key] === value) });
+      button.addEventListener("click", function () {
+        filters[key] = filters[key] === value ? null : value;
+        renderFilters(); renderList();
+      });
+      row.appendChild(button);
+    });
+    return row;
+  }
+  function renderFilters() {
+    var box = document.getElementById("filters");
+    clear(box);
+    box.appendChild(filterRow("Confiance", "confidence", { high: "Élevée", medium: "Moyenne", low: "Faible", unknown: "Inconnue" }));
+    box.appendChild(filterRow("Statut", "status", STATUS_LABEL));
+  }
+  function visibleQuestions() {
+    return QUESTIONS.filter(function (question) {
+      return (!filters.confidence || confKey(question) === filters.confidence) &&
+        (!filters.status || question.status === filters.status);
+    });
+  }
+  function renderList() {
+    var list = document.getElementById("qlist");
+    clear(list);
+    var visible = visibleQuestions();
+    if (!visible.length) {
+      list.appendChild(el("li", { class: "no-match", text: "Aucune question ne correspond aux filtres." }));
+      return;
+    }
+    visible.forEach(function (question) {
+      var badges = el("span", { class: "qbadges" }, [statusBadge(question), confBadge(question), correctMark(question)]);
+      var button = el("button", { class: "qitem", type: "button", "data-id": question.id, "aria-current": String(question.id === selectedId) }, [
+        el("span", { class: "qid", text: question.id }),
+        el("span", { class: "qtext", text: question.question }),
+        badges
+      ]);
+      button.addEventListener("click", function () { select(question.id); });
+      list.appendChild(el("li", {}, [button]));
+    });
+  }
+
+  /* ---------- Detail ---------- */
+  function callout(cls, title, lines, extra) {
+    var box = el("div", { class: "callout " + cls }, [el("div", { class: "title", text: title })]);
+    if (lines && lines.length) {
+      var ul = el("ul");
+      lines.forEach(function (line) { ul.appendChild(el("li", { text: line })); });
+      box.appendChild(ul);
+    }
+    if (extra) box.appendChild(el("div", { text: extra }));
+    return box;
+  }
+  function answerNode(answer) {
+    var items = asList(answer);
+    if (!items.length) return el("div", { class: "answer-text", text: "—" });
+    if (!Array.isArray(answer)) return el("div", { class: "answer-text", text: String(answer) });
+    var chips = el("div", { class: "answer-chips" });
+    items.forEach(function (item) { chips.appendChild(el("span", { class: "answer-chip", text: String(item) })); });
+    return chips;
+  }
+  function retrievedSection(question, open, title) {
+    var rows = question.retrieved || [];
+    var details = el("details", { class: "docs" }, [el("summary", { text: (title || "Documents consultés") + " (" + rows.length + ")" })]);
+    if (open) details.open = true;
+    if (!rows.length) {
+      details.appendChild(el("p", { class: "meta", text: "Aucun document consulté." }));
+      return details;
+    }
+    var table = el("table", { class: "docs-table" }, [el("thead", {}, [el("tr", {}, ["Document", "Type", "Date", "Score"].map(function (name) {
+      return el("th", { scope: "col", text: name });
+    }))])]);
+    var body = el("tbody");
+    rows.forEach(function (doc) {
+      var score = typeof doc.score === "number" ? doc.score.toFixed(3) : "–";
+      body.appendChild(el("tr", {}, [
+        el("td", { text: doc.doc_id }), el("td", { text: doc.doc_type || "–" }),
+        el("td", { text: doc.doc_date || "–" }), el("td", { text: score })
+      ]));
+    });
+    table.appendChild(body);
+    details.appendChild(table);
+    return details;
+  }
+  function openLightbox(src, alt) {
+    var box = document.getElementById("lightbox");
+    clear(box);
+    var close = el("button", { class: "close", type: "button", text: "Fermer (Échap)" });
+    close.addEventListener("click", function () { box.close(); });
+    box.appendChild(el("div", { class: "frame" }, [
+      el("div", { class: "bar" }, [el("strong", { text: alt }), close]),
+      el("img", { src: src, alt: alt })
+    ]));
+    box.showModal();
+  }
+  function evidenceCard(item, isConflict) {
+    var info = EVIDENCE_STATE[item.state] || { cls: "", label: String(item.state) };
+    var cardClass = item.state === "verified" ? "verified" : item.state === "unverified" ? "bad-card" : "other";
+    if (item.state === "unverified") cardClass = "unverified";
+    var pageText = item.page === null || item.page === undefined ? "" : "page " + item.page;
+    var card = el("article", { class: "card " + cardClass }, [
+      el("div", { class: "card-head" }, [
+        el("span", { class: "doc-id" }, [el("span", { text: item.doc_id }), el("span", { class: "page-no", text: pageText ? " · " + pageText : "" })]),
+        badge(info.label, info.cls, "État de la citation : " + info.label)
+      ])
+    ]);
+    var body = el("div", { class: "card-body" });
+    if (item.value) {
+      body.appendChild(el("div", { class: "value" + (isConflict ? " big" : "") }, [el("span", { class: "k", text: "Valeur" }), el("span", { text: item.value })]));
+    }
+    body.appendChild(el("blockquote", { class: item.state === "unverified" ? "struck" : "", text: item.quote || "" }));
+    card.appendChild(body);
+    var shown = item.crop_image || item.full_image;
+    if (shown) {
+      var alt = "Extrait de " + item.doc_id + (pageText ? ", " + pageText : "");
+      var thumb = el("button", { class: "thumb", type: "button", "aria-label": "Agrandir : " + alt }, [
+        el("img", { src: shown, alt: alt, loading: "lazy" })
+      ]);
+      thumb.addEventListener("click", function () { openLightbox(item.full_image || shown, alt); });
+      card.appendChild(thumb);
+    }
+    return card;
+  }
+  function evidenceSection(question) {
+    var items = question.evidence || [];
+    if (!items.length) return null;
+    var isConflict = question.status === "conflict";
+    var title = isConflict ? "Les sources se contredisent" : "Preuves";
+    var grid = el("div", { class: "evidence-grid" + (isConflict ? " two-col" : "") });
+    items.forEach(function (item) { grid.appendChild(evidenceCard(item, isConflict)); });
+    return el("section", {}, [el("h3", { class: "section-title", text: title }), grid]);
+  }
+  function confidenceBlock(question) {
+    var reasons = question.confidence_reasons || [];
+    var details = el("details", { class: "why" }, [el("summary", { text: "Pourquoi cette confiance ?" })]);
+    if (!reasons.length) {
+      details.appendChild(el("p", { text: "Aucun signal d'alerte." }));
+    } else {
+      var ul = el("ul");
+      reasons.forEach(function (reason) { ul.appendChild(el("li", { text: reason })); });
+      details.appendChild(ul);
+    }
+    if (question.confidence === "low" || reasons.length) details.open = true;
+    return details;
+  }
+  function renderDetail() {
+    var box = document.getElementById("detail");
+    clear(box);
+    var question = QUESTIONS.filter(function (item) { return item.id === selectedId; })[0];
+    if (!question) {
+      box.appendChild(el("p", { class: "empty", text: "Sélectionnez une question dans la liste." }));
+      return;
+    }
+    box.appendChild(el("div", { class: "question" }, [el("span", { class: "qid", text: question.id }), el("span", { text: question.question })]));
+    var answerBox = el("div", { class: "answer-box" }, [el("div", { class: "label", text: "Réponse" })]);
+    if (question.status === "not_found") {
+      answerBox.appendChild(el("div", { class: "answer-text", text: "Aucune réponse trouvée — documents consultés" }));
+    } else {
+      answerBox.appendChild(answerNode(question.answer));
+    }
+    box.appendChild(answerBox);
+    box.appendChild(el("div", { class: "row" }, [statusBadge(question), confBadge(question), correctMark(question),
+      question.elapsed_s !== null && question.elapsed_s !== undefined ? el("span", { class: "meta", text: question.elapsed_s.toFixed(1) + " s" }) : null]));
+    box.appendChild(confidenceBlock(question));
+
+    if (question.error) box.appendChild(callout("bad", "Erreur", [], question.error));
+    if (DATA.is_scored && question.is_correct === false) {
+      box.appendChild(callout("bad", "Réponse attendue", asList(question.expected_answer).map(String)));
+    }
+    if ((question.ungrounded_values || []).length) {
+      box.appendChild(callout("warn", "Valeurs non retrouvées dans les sources", question.ungrounded_values));
+    }
+    if ((question.dropped_citations || []).length) {
+      box.appendChild(callout("warn", "Citations écartées (non retrouvées dans le document)", question.dropped_citations));
+    }
+    if (question.note) box.appendChild(callout("ok", "Calcul vérifié", [], question.note));
+
+    var evidence = evidenceSection(question);
+    if (evidence) box.appendChild(evidence);
+    var notFound = question.status === "not_found";
+    box.appendChild(retrievedSection(question, notFound, notFound ? "Documents consultés" : null));
+  }
+
+  /* ---------- Selection, hash, keyboard ---------- */
+  function select(id, fromHash) {
+    selectedId = id;
+    if (!fromHash && location.hash !== "#" + id) history.replaceState(null, "", "#" + id);
+    renderList(); renderDetail();
+    var current = document.querySelector('.qitem[aria-current="true"]');
+    if (current) current.scrollIntoView({ block: "nearest" });
+  }
+  function move(step) {
+    var visible = visibleQuestions();
+    if (!visible.length) return;
+    var index = visible.findIndex(function (item) { return item.id === selectedId; });
+    var next = Math.min(visible.length - 1, Math.max(0, index + step));
+    select(visible[next].id);
+    var current = document.querySelector('.qitem[aria-current="true"]');
+    if (current) current.focus();
+  }
+  document.addEventListener("keydown", function (event) {
+    if (document.getElementById("lightbox").open) return;
+    if (event.key === "ArrowDown") { event.preventDefault(); move(1); }
+    else if (event.key === "ArrowUp") { event.preventDefault(); move(-1); }
+  });
+  document.getElementById("lightbox").addEventListener("click", function (event) {
+    if (event.target === this) this.close();
+  });
+  window.addEventListener("hashchange", function () {
+    var id = decodeURIComponent(location.hash.slice(1));
+    if (QUESTIONS.some(function (item) { return item.id === id; })) select(id, true);
+  });
+
+  /* ---------- Boot ---------- */
+  renderHeader();
+  if (!QUESTIONS.length) {
+    document.getElementById("main").replaceWith(el("div", { class: "empty" }, [
+      el("h2", { text: "Aucune question à afficher" }),
+      el("p", { text: "Cette exécution ne contient aucune réponse à vérifier." })
+    ]));
+    return;
+  }
+  renderFilters();
+  var initial = decodeURIComponent(location.hash.slice(1));
+  var known = QUESTIONS.some(function (item) { return item.id === initial; });
+  select(known ? initial : QUESTIONS[0].id, known);
+})();
+</script>
+</body>
+</html>
