@@ -12,6 +12,7 @@ from archive.common.config import AppConfig
 from archive.common.constants import PDF_GLOB
 from archive.common.step_model import PipelineStep, StepCallback, emit_step
 from archive.ingest.build.index_sync_service import sync_index
+from archive.ingest.build.manifest_gateway import ManifestError
 from archive.llm.llm_gateway import LlmGateway
 from archive.pipeline.pipeline_constants import (
     LOG_DENSE_UNAVAILABLE,
@@ -25,6 +26,8 @@ from archive.pipeline.pipeline_constants import (
     LOG_SYNC_FAILED,
     LOG_SYNC_REPORT,
     MODEL_LOAD_WORKERS,
+    MSG_INDEX_OPEN,
+    MSG_NO_CORPUS,
 )
 from archive.pipeline.trace_service import AnswerParts
 from archive.retrieval.models.embedding_gateway import (
@@ -36,6 +39,7 @@ from archive.retrieval.models.rerank_gateway import (
     RerankPort,
     load_reranker,
 )
+from archive.retrieval.qdrant.qdrant_gateway import IndexOpenError
 from archive.retrieval.search_service import SearchService
 from archive.validation.answer_model import FinalAnswer
 from archive.validation.answer_validator import ValidationResult, validate
@@ -47,6 +51,10 @@ from archive.validation.grounding.grounding_service import check_grounding
 from archive.validation.input_model import Question
 
 logger = logging.getLogger(__name__)
+
+# What opening the engine can raise: unusable index or manifest, or a
+# file-system failure while loading or syncing them.
+ENGINE_OPEN_ERRORS = (OSError, IndexOpenError, ManifestError)
 
 
 @dataclass(frozen=True)
@@ -132,6 +140,7 @@ def open_engine(config: AppConfig) -> Iterator[Engine]:
     Raises:
         IndexOpenError: the index cannot be opened.
         ManifestError: the index manifest is unusable.
+        OSError: the index files cannot be read or written.
     """
     embedder, reranker = _load_models()
     _sync_index_or_continue(config, embedder)
@@ -142,6 +151,24 @@ def open_engine(config: AppConfig) -> Iterator[Engine]:
             _valid_doc_ids(search, config.corpus_dir),
             config,
         )
+
+
+def has_pdfs(corpus_dir: Path) -> bool:
+    """Whether ``corpus_dir`` exists and holds at least one PDF."""
+    return corpus_dir.is_dir() and any(corpus_dir.glob(PDF_GLOB))
+
+
+def corpus_is_ready(corpus_dir: Path) -> bool:
+    """Whether the corpus has PDFs; logs the fix when it has none."""
+    if has_pdfs(corpus_dir):
+        return True
+    logger.error(MSG_NO_CORPUS.format(path=corpus_dir))
+    return False
+
+
+def log_engine_open_failure(config: AppConfig, error: Exception) -> None:
+    """Log that the index of ``config`` could not be opened."""
+    logger.error(MSG_INDEX_OPEN.format(path=config.index_dir, reason=error))
 
 
 def _log_grounding(

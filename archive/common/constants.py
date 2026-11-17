@@ -37,6 +37,9 @@ STOPWORDS_EN = frozenset(
 
 STOPWORDS = STOPWORDS_FR | STOPWORDS_EN
 
+# Format of the root logger of every command-line entry point.
+LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+
 # Corpus and pipeline share this glob.
 PDF_SUFFIX = ".pdf"
 PDF_GLOB = f"*{PDF_SUFFIX}"

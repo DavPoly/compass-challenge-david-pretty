@@ -19,12 +19,12 @@ from pathlib import Path
 from typing import NoReturn
 
 from archive.common.config import AppConfig, ConfigError
+from archive.common.constants import LOG_FORMAT
 from archive.pipeline.pipeline_constants import EXIT_ERROR, EXIT_USAGE
 from archive.pipeline.run_service import run
 
 USAGE = "usage: python answer.py questions.jsonl answers.jsonl"
 EXPECTED_ARG_COUNT = 2
-LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 
 
 def main(argv: Sequence[str]) -> int:

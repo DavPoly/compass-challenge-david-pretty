@@ -11,12 +11,13 @@ from pathlib import Path
 from typing import TextIO
 
 from archive.common.config import AppConfig
-from archive.common.constants import PDF_GLOB
 from archive.ingest.build.manifest_gateway import ManifestError
 from archive.llm.llm_gateway import LlmUnavailableError
 from archive.pipeline.engine.engine_service import (
     Engine,
     answer_one,
+    corpus_is_ready,
+    log_engine_open_failure,
     open_engine,
 )
 from archive.pipeline.pipeline_constants import (
@@ -33,10 +34,8 @@ from archive.pipeline.pipeline_constants import (
     LOG_VIEWER_FAILED,
     LOG_VIEWER_READY,
     MSG_DEADLINE_TRACE,
-    MSG_INDEX_OPEN,
     MSG_IO_ERROR,
     MSG_LATE_TRACE,
-    MSG_NO_CORPUS,
     MSG_OVER_BUDGET_TRACE,
     POLL_INTERVAL_S,
     QUESTION_BUDGET_S,
@@ -262,10 +261,6 @@ def _unique(questions: list[Question]) -> list[Question]:
     return unique
 
 
-def _has_pdfs(corpus_dir: Path) -> bool:
-    return corpus_dir.is_dir() and any(corpus_dir.glob(PDF_GLOB))
-
-
 def _build_viewer(
     config: AppConfig,
     run_id: str,
@@ -310,8 +305,7 @@ def run(  # noqa: PLR0913, PLR0917 - injectable time sources
     """
     deadline_s = clock() + GLOBAL_DEADLINE_S
     run_id = new_run_id(now())
-    if not _has_pdfs(config.corpus_dir):
-        logger.error(MSG_NO_CORPUS.format(path=config.corpus_dir))
+    if not corpus_is_ready(config.corpus_dir):
         return EXIT_ERROR
     try:
         questions = _unique(load_questions(questions_path))
@@ -333,9 +327,7 @@ def run(  # noqa: PLR0913, PLR0917 - injectable time sources
             ) as out:
                 _process_all(questions, AnswerWriter(out), context)
     except (IndexOpenError, ManifestError) as error:
-        logger.error(
-            MSG_INDEX_OPEN.format(path=config.index_dir, reason=error)
-        )
+        log_engine_open_failure(config, error)
         return EXIT_ERROR
     except OSError as error:
         logger.error(MSG_IO_ERROR.format(path=answers_path, reason=error))
