@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from archive.agent.draft_service import draft
 from archive.agent.hops.expand_service import expand_by_identifiers
 from archive.agent.hops.hop_constants import (
+    EMAIL_MARKER,
     FOLLOW_UP_DOC_TYPES,
     FOLLOW_UP_K,
     FOLLOW_UP_TYPED_K,
@@ -44,14 +45,30 @@ class _LoopState:
     expanded: bool = False
 
     def prompt_hits(self) -> list[SearchHit]:
-        """Return the targeted then original hits, deduped and capped."""
-        merged = _dedupe(self.targeted + self.original)
+        """Return targeted hits, linked originals, then the rest.
+
+        Originals sharing a non-email identifier with a targeted hit
+        come before unlinked ones. The result is deduped and capped.
+        """
+        linked_codes = _codes(self.targeted)
+        linked = [hit for hit in self.original if _codes([hit]) & linked_codes]
+        merged = _dedupe(self.targeted + linked + self.original)
         return merged[:MAX_PROMPT_CHUNKS]
 
     def mark_used(self, prompt_hits: list[SearchHit]) -> None:
         """Record hits that reached a prompt."""
         for hit in prompt_hits:
             self.used.setdefault(hit.chunk.chunk_id, hit)
+
+
+def _codes(hits: list[SearchHit]) -> set[str]:
+    """Return the non-email identifiers carried by the hits."""
+    return {
+        code
+        for hit in hits
+        for code in hit.chunk.identifiers
+        if EMAIL_MARKER not in code
+    }
 
 
 def _dedupe(hits: list[SearchHit]) -> list[SearchHit]:
@@ -123,8 +140,9 @@ def run_hops(  # noqa: PLR0913 - frozen signature
     Returns:
         A result whose hits are every hit that reached a prompt and
         whose draft is the last draft. Prompt hits are the targeted
-        ones (expansion and follow-up, newest first), then the
-        original hits, capped at `MAX_PROMPT_CHUNKS`.
+        ones (expansion and follow-up, newest first), then original
+        hits sharing an identifier with a targeted one, then the
+        other original hits, capped at `MAX_PROMPT_CHUNKS`.
 
     Raises:
         LlmUnavailableError: the LLM could not give a valid draft.

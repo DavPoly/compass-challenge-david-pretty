@@ -21,14 +21,14 @@ ANSWER = DraftAnswer(
 )
 
 
-def _hit(doc_id: str) -> SearchHit:
+def _hit(doc_id: str, identifiers: list[str] | None = None) -> SearchHit:
     chunk = Chunk(
         doc_id=doc_id,
         chunk_id=f"{doc_id}#0",
         chunk_kind=ChunkKind.TEXT,
         doc_type="unknown",
         doc_date=None,
-        identifiers=[],
+        identifiers=identifiers or [],
         lang="fr",
         text=doc_id,
     )
@@ -285,3 +285,46 @@ def test_follow_up_query_is_trimmed_and_typed() -> None:
     }
     typed = [f for _, f, _ in search.queries if f is not None]
     assert typed[0].doc_types == ["directory", "project_sheet", "contract"]
+
+
+def _promotion_prompt_ids(
+    monkeypatch: pytest.MonkeyPatch,
+    targeted_codes: list[str],
+    charter_codes: list[str],
+) -> list[str]:
+    originals = [_hit(f"doc_{n:02d}") for n in range(MAX_PROMPT_CHUNKS)]
+    originals.append(_hit("doc_charter", charter_codes))
+    _patch_expand(monkeypatch, [_hit("doc_target", targeted_codes)])
+
+    result = _run(
+        FakeLlm(), FakeSearch(), HopPolicy.multi_hop(), hits=originals
+    )
+
+    return _doc_ids(result)
+
+
+def test_original_sharing_a_code_with_targeted_is_promoted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ids = _promotion_prompt_ids(monkeypatch, ["BRV-1"], ["BRV-1"])
+
+    assert ids[:2] == ["doc_target", "doc_charter"]
+    assert len(ids) == MAX_PROMPT_CHUNKS
+
+
+def test_email_only_overlap_does_not_promote(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ids = _promotion_prompt_ids(monkeypatch, ["a@b.fr"], ["a@b.fr"])
+
+    assert "doc_charter" not in ids
+
+
+def test_no_targeted_hits_keeps_original_order() -> None:
+    originals = [_hit("doc_a"), _hit("doc_b", ["BRV-1"]), _hit("doc_c")]
+
+    result = _run(
+        FakeLlm(), FakeSearch(), HopPolicy.multi_hop(), hits=originals
+    )
+
+    assert _doc_ids(result) == ["doc_a", "doc_b", "doc_c"]
