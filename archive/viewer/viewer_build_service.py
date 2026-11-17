@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
@@ -43,6 +44,7 @@ from archive.viewer.viewer_constants import (
     SCORE_OK_KEY,
     SCORE_ROWS_KEY,
     SCRIPT_ESCAPES,
+    TEMP_SUFFIX,
     TEMPLATE_PATH,
     TRACE_GLOB,
     VIEWER_ENCODING,
@@ -148,9 +150,20 @@ def build_viewer(request: ViewerRequest) -> Path:
     data = _make_viewer_data(traces, scores, request)
     page = _embed(template, data, request.template_path)
     target = request.out_dir / INDEX_FILENAME
-    target.write_text(page, encoding=VIEWER_ENCODING)
+    _write_atomically(target, page)
     logger.info(LOG_VIEWER_WRITTEN, target)
     return target
+
+
+def _write_atomically(target: Path, page: str) -> None:
+    """Write ``page`` so readers see the old or new file, never a torn one."""
+    temp = target.with_name(target.name + TEMP_SUFFIX)
+    try:
+        temp.write_text(page, encoding=VIEWER_ENCODING)
+        os.replace(temp, target)
+    except OSError:
+        temp.unlink(missing_ok=True)
+        raise
 
 
 def question_view_from_trace(

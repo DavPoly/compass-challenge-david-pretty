@@ -23,10 +23,12 @@ DATA_PLACEHOLDER = "__VIEWER_DATA__"
 INLINE_ASSETS = (
     ("/*__VIEWER_STYLES__*/", "viewer_styles.css"),
     ("/*__VIEWER_DOM__*/", "viewer_dom.js"),
+    ("/*__VIEWER_LIST__*/", "viewer_list.js"),
     ("/*__VIEWER_APP__*/", "viewer_app.js"),
     ("/*__VIEWER_LIVE__*/", "viewer_live.js"),
 )
 INDEX_FILENAME = "index.html"
+TEMP_SUFFIX = ".tmp"
 PAGES_DIRNAME = "pages"
 VIEWER_ENCODING = "utf-8"
 RETRIEVED_LIMIT = 10

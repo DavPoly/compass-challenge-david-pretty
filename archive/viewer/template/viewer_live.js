@@ -23,8 +23,13 @@
   }
 
   /* ---------- Progress panel ---------- */
-  function stepNode(step, isLatest) {
-    var marker = isLatest && running ? el("span", { class: "spinner", role: "presentation" }) : icon("check", "sm");
+  function stepMarker(isLatest, isFailed) {
+    if (isLatest && isFailed) return icon("error", "sm");
+    if (isLatest && running) return el("span", { class: "spinner", role: "presentation" });
+    return icon("check", "sm");
+  }
+  function stepNode(step, isLatest, isFailed) {
+    var marker = stepMarker(isLatest, isFailed);
     return el("li", { class: "step" }, [
       marker,
       el("span", { class: "grow" }, [
@@ -46,7 +51,7 @@
       errorMessage ? close : null
     ]));
     panel.appendChild(el("ul", { class: "steps" }, steps.map(function (step, index) {
-      return stepNode(step, index === steps.length - 1);
+      return stepNode(step, index === steps.length - 1, Boolean(errorMessage));
     })));
     if (errorMessage) panel.appendChild(el("p", { class: "progress-error", text: errorMessage }));
   }
