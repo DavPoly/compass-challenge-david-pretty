@@ -3,7 +3,7 @@
 **Status:** in-progress
 **Parent:** `.plans/impl-00-roadmap.md` step 02, `.plans/global-architecture.md` §1
 **BASE:** `59a79fc618692ee90f82cf2af424f1bbdfed5a05`
-**Subagent branches:** refactor/ingest-layout (T0, merged aee336d), feat/table-render (T1), feat/doc-metadata (T2), feat/index-sync (T3), feat/retrieve-hints (T4), feat/integrate-retrieve (T5)
+**Subagent branches:** refactor/ingest-layout (T0, merged aee336d), feat/table-render (T1), feat/doc-metadata (T2), feat/index-sync (T3), feat/retrieve-hints (T4), feat/integrate-retrieve (T5), fix/sync-robustness, fix/metadata-false-matches, fix/script-quality (review round 1)
 **Orchestrator branch B:** `feat/ingest-quality`, cut from `main` @ 59a79fc
 
 ## Context
@@ -252,3 +252,15 @@ After the final merge, `pre-commit-review` (`reviewer` + `quality`) runs on
   Prompt at K=16: avg 18.1 k chars, max 32.5 k. Merge 23 code lines.
 - 2026-11-16: LLM_* unset in this session, so the pre-commit review and
   the V sync check run before the scored V run (as in step 01).
+- 2026-11-16 (V sync): PASS on a %TEMP% copy — added/changed/removed
+  detected (4.7 s), doc_9999 found by code, doc_0003 gone, doc_0002
+  re-indexed with no stale chunk; no-op sync 1.69–1.78 s (3 repeats).
+- 2026-11-16 (review): reviewer 0 blocker, 2 MAJOR (non-OSError sync
+  failure kills the run; orphan chunks after a crash between upsert and
+  manifest), 6 MINOR; quality 3 MAJOR (check_tables duplicates the
+  doc-type table/helpers, scripts keep inline constants). Accepted, not
+  fixed: sync time counts against the 17-min budget (intended: startup
+  is part of the run); text inside a table bbox but outside cells is
+  dropped (check showed no loss on 28 docs); "Version 2.1" → "2";
+  folder move of chunking_* to ingest/chunk/ and the metadata_constants
+  split are deferred (churn > gain this late).
