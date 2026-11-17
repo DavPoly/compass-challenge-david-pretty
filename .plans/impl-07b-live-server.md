@@ -1,6 +1,6 @@
 # Plan: live "ask the archive" server for the viewer (`impl-07b-live-server`)
 
-**Status:** in-progress
+**Status:** done (pending real-LLM smoke test by user)
 **BASE:** `fd950bf7db07cf674848120f3bc5e407b83ff90c` (feat/traces-viewer)
 **Subagent branches:** feat/live-engine, feat/live-viewer-api, feat/live-ui, feat/live-server
 **Parent:** `.plans/impl-07-traces-viewer.md` (step 07). The work continues on
@@ -188,3 +188,13 @@ in one Agent call, and the main agent does not implement tasks inline.
 
 - 2026-11-17: live server via stdlib `http.server` + SSE (no new dependency);
   the static viewer is kept as the offline fallback (user choices).
+- 2026-11-17: navigation changed to list-first (home lists all cases, detail on
+  select); sidebar filters keep their look but now filter the home list (user).
+- 2026-11-17: review fixes: localhost-only requests (Host/Origin checks, JSON
+  content type, 30 s socket timeout); result sent before a background,
+  coalesced page rebuild; atomic index.html; live ids never reused; engine
+  startup I/O errors reported as index errors; shared `has_pdfs`/startup
+  helpers and `LOG_FORMAT`; `viewer_app.js` split (`viewer_list.js`).
+- 2026-11-17: accepted: rebuild re-renders every image (fine for a demo-sized
+  run); rebuild thread is a daemon; several commits over the 200-line budget
+  (new files with their tests).
