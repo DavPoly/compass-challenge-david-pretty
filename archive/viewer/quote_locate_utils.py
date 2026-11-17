@@ -9,13 +9,8 @@ glue or split words differently from the quote.
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from archive.common.text.text_normalize_utils import normalize_for_match
-from archive.validation.grounding.grounding_constants import (
-    ELLIPSIS_RE,
-    MIN_QUOTE_PIECE_LENGTH,
-    PUNCTUATION_FOLD,
-    WHITESPACE_RE,
-)
+from archive.common.text.quote_match_utils import fold_text, quote_pieces
+from archive.common.text.text_normalize_constants import WHITESPACE_RE
 from archive.viewer.viewer_constants import LINE_TOP_TOLERANCE_PT
 
 
@@ -60,19 +55,6 @@ class _Index:
 
     text: str
     owners: list[int]
-
-
-def _fold(text: str) -> str:
-    plain = normalize_for_match(text.translate(PUNCTUATION_FOLD))
-    return WHITESPACE_RE.sub(" ", plain).strip()
-
-
-def _pieces(quote: str) -> list[str]:
-    parts = ELLIPSIS_RE.split(quote)
-    pieces = [piece for piece in map(_fold, parts) if piece]
-    if len(parts) == 1:
-        return pieces
-    return [p for p in pieces if len(p) >= MIN_QUOTE_PIECE_LENGTH]
 
 
 def _build_index(
@@ -145,7 +127,7 @@ def _locate_value(
     quote_indices: list[int],
     value: str,
 ) -> list[int]:
-    pieces = [_fold(value)]
+    pieces = [fold_text(value)]
     if not pieces[0]:
         return []
     first, last = quote_indices[0], quote_indices[-1]
@@ -171,13 +153,13 @@ def locate_quote(
         The line boxes of the quote and of the value, or None when the
         quote is empty or not found on this page. Never raises.
     """
-    pieces = _pieces(quote)
+    pieces = quote_pieces(quote)
     if not pieces:
         return None
     folded_words = [
         (index, folded)
         for index, word in enumerate(words)
-        if (folded := _fold(word.text))
+        if (folded := fold_text(word.text))
     ]
     quote_indices = _find_words(folded_words, pieces)
     if not quote_indices:
