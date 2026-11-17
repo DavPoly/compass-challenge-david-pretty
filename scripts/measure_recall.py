@@ -28,11 +28,14 @@ from archive.pipeline.pipeline_constants import (  # noqa: E402
     EXIT_OK,
 )
 from archive.retrieval.search_service import SearchService  # noqa: E402
+from scripts.measure_recall_constants import (  # noqa: E402
+    CELL_WIDTH,
+    DEFAULT_GOLD_PARTS,
+    DEFAULT_KS,
+    ID_WIDTH,
+)
 
-DEFAULT_GOLD = REPO_ROOT / "samples" / "gold.jsonl"
-DEFAULT_KS = "8,12,16,24,32"
-ID_WIDTH = 6
-CELL_WIDTH = 9
+DEFAULT_GOLD = REPO_ROOT.joinpath(*DEFAULT_GOLD_PARTS)
 
 
 @dataclass(frozen=True)
@@ -56,15 +59,22 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def _load_gold(path: Path) -> list[GoldQuestion]:
     questions: list[GoldQuestion] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for line_number, line in enumerate(lines, start=1):
         if not line.strip():
             continue
-        row = json.loads(line)
-        citations = frozenset(row.get("citations") or [])
-        if citations:
-            questions.append(
-                GoldQuestion(row["id"], row["question"], citations)
-            )
+        try:
+            row = json.loads(line)
+            citations = frozenset(row.get("citations") or [])
+            if citations:
+                questions.append(
+                    GoldQuestion(row["id"], row["question"], citations)
+                )
+        except (json.JSONDecodeError, KeyError, AttributeError) as error:
+            raise ValueError(
+                f"{path}:{line_number}: malformed gold row ({error!r});"
+                " expected a JSON object with id, question, citations"
+            ) from error
     return questions
 
 
@@ -82,28 +92,27 @@ def _recall_rows(
     return rows
 
 
+def _format_row(label: str, cells: list[str]) -> str:
+    """One report line: label column then right-aligned cells."""
+    return label.ljust(ID_WIDTH) + "".join(
+        cell.rjust(CELL_WIDTH) for cell in cells
+    )
+
+
 def _print_report(
     questions: list[GoldQuestion],
     rows: list[list[float]],
     ks: list[int],
 ) -> None:
-    print(
-        "id".ljust(ID_WIDTH) + "".join(f"@{k}".rjust(CELL_WIDTH) for k in ks)
-    )
+    print(_format_row("id", [f"@{k}" for k in ks]))
     for item, row in zip(questions, rows, strict=True):
-        cells = "".join(f"{value:.2f}".rjust(CELL_WIDTH) for value in row)
-        print(item.question_id.ljust(ID_WIDTH) + cells)
+        print(_format_row(item.question_id, [f"{v:.2f}" for v in row]))
     total = len(rows)
-    means = [sum(row[i] for row in rows) / total for i in range(len(ks))]
-    hits_any = [sum(row[i] > 0 for row in rows) for i in range(len(ks))]
-    print(
-        "mean".ljust(ID_WIDTH)
-        + "".join(f"{m:.2f}".rjust(CELL_WIDTH) for m in means)
-    )
-    print(
-        "any".ljust(ID_WIDTH)
-        + "".join(f"{h}/{total}".rjust(CELL_WIDTH) for h in hits_any)
-    )
+    columns = list(range(len(ks)))
+    means = [sum(row[column] for row in rows) / total for column in columns]
+    hits_any = [sum(row[column] > 0 for row in rows) for column in columns]
+    print(_format_row("mean", [f"{mean:.2f}" for mean in means]))
+    print(_format_row("any", [f"{hits}/{total}" for hits in hits_any]))
 
 
 def main(argv: list[str] | None = None) -> int:

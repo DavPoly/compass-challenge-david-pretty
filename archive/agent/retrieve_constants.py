@@ -4,8 +4,15 @@ from archive.common.chunk_model import DocType
 
 SEARCH_TOP_K = 16
 # Share of the k slots reserved for hits filtered on the hinted types.
+# Must satisfy 0 < share <= 1 so the typed slots never exceed k.
 RETRIEVE_TYPED_SHARE = 0.75
 
+# These keywords intentionally differ from the title phrases used at
+# ingest (`DOC_TYPE_PHRASES`): they match question words ("the
+# invoice", "the meeting"), not document titles ("Facture no"). The
+# newsletter, memo, technical_note and project_sheet families have no
+# hint because questions rarely name them, and a wrong hint filters
+# out the right documents.
 # Regex patterns matched on `normalize_for_match(question)` (lowercase,
 # no accents). Deliberately left out, because they cause false hints:
 # - courriel / email / e-mail: questions ask for the email address of a

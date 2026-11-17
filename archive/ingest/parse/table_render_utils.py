@@ -28,8 +28,14 @@ def render_row(cells: Sequence[str | None]) -> str:
 
 
 def render_table(rows: Sequence[Sequence[str | None]]) -> str:
-    """Render a table as one line per row."""
-    return LINE_SEPARATOR.join(render_row(row) for row in rows)
+    """Render a table as one line per row, skipping all-empty rows."""
+    lines = [render_row(row) for row in rows if _has_content(row)]
+    return LINE_SEPARATOR.join(lines)
+
+
+def _has_content(cells: Sequence[str | None]) -> bool:
+    """Whether at least one cell holds text after cleaning."""
+    return any(clean_cell(cell) for cell in cells)
 
 
 def merge_by_position(
