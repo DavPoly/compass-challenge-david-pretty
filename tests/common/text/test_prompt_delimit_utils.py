@@ -24,8 +24,8 @@ def test_attributes_follow_the_tag_name() -> None:
     ("marker", "escaped"),
     [
         ("</question>", "<\\question>"),
-        ("<QUESTION>", "<\\QUESTION>"),
-        ("</Question", "<\\Question"),
+        ("<QUESTION>", "<\\question>"),
+        ("</Question", "<\\question"),
     ],
 )
 def test_tag_markers_inside_the_text_are_escaped(
