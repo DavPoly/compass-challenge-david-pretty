@@ -236,20 +236,75 @@ After the final merge, `pre-commit-review` (`reviewer` + `quality`) runs on
 - Batch B: `feat/dense-integrate` (T4 code); the rebuild and the
   measurements run on B in the main checkout.
 
+## Batch B measurements (2026-11-16)
+
+Run on the rebuilt index (ae81e80), 17 samples gold questions and 15
+paraphrase gold questions, k = 16 primary. Baseline before the
+rebuild was BM25 recall@16 = 0.79 on samples, identical to step 02
+(delta 0.00), so the rebuild changed no sparse ranking.
+
+| config                | samples @16 | paraph. @16 | s/query |
+|-----------------------|-------------|-------------|---------|
+| R1 BM25 only          | 0.79        | 0.80        | 0.8     |
+| R2 + dense            | 0.82        | 0.87        | 2.5     |
+| R3 + dense + jina     | unmeasured  | unmeasured  | 20-35   |
+| R3 + dense + bge-int8 | 1.00 (n=2)  | not run     | 105-140 |
+| R5 bge-int8 only      | not run     | not run     | 105-140 |
+
+The k sweep on samples rises with k: BM25 0.67/0.71/0.79/0.79/0.79
+and dense 0.79/0.80/0.82/0.82/0.85 at k = 8/12/16/24/32. Dense
+lifts samples recall@16 by 0.03 and paraphrase by 0.07, and every
+samples question now has a gold doc in the top 16 (17/17 vs 16/17).
+Per-query latency is the whole-process wall divided by the question
+count, so it includes startup; the k-sweep paraphrase runs give the
+same per-retrieve figures (0.82 s BM25, 2.27 s dense).
+
+Reranker, jina (the committed RERANK_MODEL_NAME): disqualified on
+evidence, never measured. Event 1: a startup wedge (0.3 s CPU,
+19 MB working set, 46 min wall, killed externally). Event 2: a
+compute explosion killed mid-row-1 (1451 CPU-seconds, 11.8 GB
+working set, 53 threads, about 404 s), roughly 20-35 s compute per
+question. Sixty questions would need 20-35 min of reranking alone,
+over both the 10-min questions phase bound and GLOBAL_DEADLINE_S =
+17 min, with 11.8 GB as an aggravator.
+
+Reranker, bge-int8: the model loads in 2.3 s, but each query
+re-scores RERANK_CANDIDATES = 30 candidates in 105-140 s, so a
+17-question row cannot finish inside a 600 s guard and no full-gold
+recall exists (the 2 probed samples questions both retrieve at
+1.00). Sixty questions would need 105-140 min: 6-8x over the
+budget, and a drop to 20 candidates would still need about 70-93
+min. Only CPU providers are installed (Azure, CPU); the machine has
+an Intel Arc GPU but no DirectML provider, so GPU offload is an
+unverified lever, not a fix.
+
+Decision: RERANK_ENABLED stays False and RERANK_MODEL_NAME stays
+the committed jina id — no constant changed, so no `feat` commit.
+Dense stays on: samples 0.82 @16 meets the 0.79 acceptance bar.
+Both candidates are recorded as not enabled for budget reasons;
+a reranker cannot be enabled without measurements.
+
+Startup, final config (reranker off, so only the embedder loads):
+warm 16.8 s (models 1.9, no-op sync 14.3 on the first SHA-1 pass,
+open index 0.6); cold 19.8 s (models 16.8 including the 0.24 GB
+embedder download, sync 2.5, open 0.6); a second warm pass took
+4.5 s with the OS file cache hot (sync 2.1). The no-op sync cost
+dominates and stays well inside the deadline.
+
+Environment note, flagged unverified: the first two reranker runs
+left a Store-python 3.11 child under the venv launcher; the wedge
+root cause is unresolved.
+
 ## Resume point
 
-2026-11-16, batch A and T4 code complete. T0-T3, T1 (real loaders @
-6efdafb) and `feat/dense-integrate` are on `feat/dense-rerank`:
-hybrid RRF search, dense ingest pass, MiniLM constants,
-measure_recall --dense/--rerank flags, 15-entry paraphrase gold.
-Checks green, 463 tests warm. User decision: dense =
-paraphrase-multilingual-MiniLM-L12-v2, DENSE_MAX_TOKENS = 128
-(probe: 0.22 GB ONNX, dim 384, no prefixes, fastembed built-in;
-e5-small is absent from the 0.9.1 registry). Phase 2 (next, main
-checkout, corpus/ lives there): rebuild the index with dense
-(MiniLM download into .cache/), measure dense x rerank on both gold
-sets with jina (1.11 GB, 1K ctx) and bge-reranker-v2-m3-int8
-(0.57 GB, 8k) — both approved; bge-reranker-base dropped as
-English-only — then decide RERANK_ENABLED, commit index/ (chore),
-time startup cold/warm. Also open: the global-deadline pipeline
-test flakes on a cold cache (passes warm) — needs a fix round.
+2026-11-17, T4 complete on `feat/dense-rerank`: index rebuilt with
+dense (ae81e80) and measured, dense enabled (samples 0.82 @16,
+paraphrase 0.87, up from 0.79/0.80 BM25), reranker left off because
+both candidates cost 20-140 s per query on this CPU-only box.
+Checks green, 463 tests. Remaining: V verification (fallback with
+HF_HUB_OFFLINE=1 and an empty cache: BM25-only warning and exit 0;
+sync budget on a %TEMP% copy with 20 PDFs and a tiny
+SYNC_DENSE_BUDGET_S: sparse_only; timing), then the user's score
+run against 33.30, then close step 03 and merge to main on
+approval. Also open: the global-deadline pipeline test flakes on a
+cold cache (passes warm) — needs a fix round.
