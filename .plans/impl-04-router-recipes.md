@@ -244,3 +244,5 @@ decisions log, and the roadmap's decision to drop the classifier).
 ## Subagent branches
 
 - Batch 0: `feat/agent-dispatch` (T0).
+- Batch A: `feat/route-plan` (T1), `feat/agg-recipe` (T2),
+  `feat/superseded-recipe` (T3).
