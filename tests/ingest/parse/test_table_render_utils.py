@@ -24,6 +24,12 @@ def test_table_has_one_line_per_row() -> None:
     assert render_table([["a", "b"], ["c", "d"]]) == "a | b\nc | d"
 
 
+def test_rows_with_only_empty_cells_are_skipped() -> None:
+    rows = [["a", "b"], [None, ""], ["  ", None], ["c", None]]
+    assert render_table(rows) == "a | b
+c | "
+
+
 def test_empty_table_renders_empty() -> None:
     assert render_table([]) == ""
 
