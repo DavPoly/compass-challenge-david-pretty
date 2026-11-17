@@ -12,7 +12,7 @@ from archive.ingest.build.index_sync_service import (
     sync_index,
 )
 from archive.ingest.build.manifest_gateway import load_manifest
-from archive.retrieval.qdrant_gateway import QdrantGateway
+from archive.retrieval.qdrant.qdrant_gateway import QdrantGateway
 from archive.retrieval.search_service import SearchFilters, SearchService
 
 BASE_DOCS = 3

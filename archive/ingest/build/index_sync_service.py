@@ -26,8 +26,8 @@ from archive.ingest.build.manifest_gateway import (
     write_manifest,
 )
 from archive.ingest.build.version_series_utils import with_effective_to
-from archive.retrieval.qdrant_constants import QDRANT_SUBDIR
-from archive.retrieval.qdrant_gateway import QdrantGateway
+from archive.retrieval.qdrant.qdrant_constants import QDRANT_SUBDIR
+from archive.retrieval.qdrant.qdrant_gateway import QdrantGateway
 
 logger = logging.getLogger(__name__)
 

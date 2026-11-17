@@ -9,7 +9,7 @@ from pathlib import Path
 from qdrant_client import QdrantClient, models
 
 from archive.common.chunk_model import Chunk
-from archive.retrieval.qdrant_constants import (
+from archive.retrieval.qdrant.qdrant_constants import (
     BUILD_HINT,
     COLLECTION_NAME,
     FIELD_DOC_ID,
@@ -23,7 +23,10 @@ from archive.retrieval.qdrant_constants import (
     SPARSE_VECTOR_NAME,
     UPSERT_BATCH_SIZE,
 )
-from archive.retrieval.sparse_encoding_utils import point_id, sparse_vector
+from archive.retrieval.qdrant.sparse_encoding_utils import (
+    point_id,
+    sparse_vector,
+)
 
 logger = logging.getLogger(__name__)
 

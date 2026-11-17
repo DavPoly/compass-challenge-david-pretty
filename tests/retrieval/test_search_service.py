@@ -10,12 +10,15 @@ import pytest
 from archive.common.chunk_model import Chunk, ChunkKind
 from archive.ingest.build.manifest_gateway import ManifestError
 from archive.retrieval import search_service
-from archive.retrieval.qdrant_constants import (
+from archive.retrieval.qdrant.qdrant_constants import (
     FIELD_DOC_DATE,
     FIELD_DOC_TYPE,
     FIELD_IDENTIFIERS,
 )
-from archive.retrieval.qdrant_gateway import IndexOpenError, QdrantGateway
+from archive.retrieval.qdrant.qdrant_gateway import (
+    IndexOpenError,
+    QdrantGateway,
+)
 from archive.retrieval.search_constants import LOG_CLOSE_TIMEOUT
 from archive.retrieval.search_service import (
     SearchFilters,

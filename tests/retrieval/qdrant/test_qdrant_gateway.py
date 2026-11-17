@@ -6,13 +6,13 @@ import pytest
 from qdrant_client import models
 
 from archive.common.chunk_model import Chunk, ChunkKind
-from archive.retrieval import qdrant_gateway
-from archive.retrieval.qdrant_constants import SPARSE_VECTOR_NAME
-from archive.retrieval.qdrant_gateway import (
+from archive.retrieval.qdrant import qdrant_gateway
+from archive.retrieval.qdrant.qdrant_constants import SPARSE_VECTOR_NAME
+from archive.retrieval.qdrant.qdrant_gateway import (
     IndexOpenError,
     QdrantGateway,
 )
-from archive.retrieval.sparse_encoding_utils import (
+from archive.retrieval.qdrant.sparse_encoding_utils import (
     point_id,
     sparse_vector,
     tokenize,

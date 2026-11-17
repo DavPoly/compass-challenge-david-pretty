@@ -27,8 +27,8 @@ from archive.ingest.parse.pdf_parse_gateway import (
     PdfParseError,
     parse_pdf,
 )
-from archive.retrieval.qdrant_constants import QDRANT_SUBDIR
-from archive.retrieval.qdrant_gateway import QdrantGateway
+from archive.retrieval.qdrant.qdrant_constants import QDRANT_SUBDIR
+from archive.retrieval.qdrant.qdrant_gateway import QdrantGateway
 
 logger = logging.getLogger(__name__)
 

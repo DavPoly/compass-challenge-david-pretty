@@ -26,4 +26,5 @@ traces/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+.cache/
 .claude/temp_worktree/
