@@ -2,19 +2,24 @@
 
 import datetime
 import logging
+import re
 
 from pydantic import BaseModel
 
 from archive.agent.recipes.recipe_constants import (
+    LOG_SUPERSEDED_EXACT_RULE,
     LOG_SUPERSEDED_LIST_CAPPED,
     LOG_SUPERSEDED_LLM_DOWN,
     LOG_SUPERSEDED_NO_SERIES,
     LOG_SUPERSEDED_NO_VERSION,
+    LOG_SUPERSEDED_PERIOD_RULE,
     SUPERSEDED_CHOICE_SYSTEM_PROMPT,
     SUPERSEDED_CHOICE_USER_PROMPT,
     SUPERSEDED_LIST_CAP,
+    SUPERSEDED_MONTH_PERIOD_FORMAT,
     SUPERSEDED_NOTE_TEMPLATE,
     SUPERSEDED_PERIOD_CLOSED,
+    SUPERSEDED_PERIOD_NOTE_TEMPLATE,
     SUPERSEDED_PERIOD_OPEN,
     SUPERSEDED_SEARCH_K,
     SUPERSEDED_SERIES_LINE,
@@ -22,17 +27,24 @@ from archive.agent.recipes.recipe_constants import (
     SUPERSEDED_TOPIC_LINE,
     SUPERSEDED_TOPIC_TAG,
     SUPERSEDED_UNKNOWN_LANG,
+    SUPERSEDED_YEAR_RE,
 )
 from archive.agent.recipes.recipe_model import RecipeResult, RecipeSearchPort
 from archive.agent.route.route_model import QuestionPlan
-from archive.common.chunk_model import DocType
+from archive.common.chunk_model import Chunk, DocType
 from archive.common.constants import QUESTION_TAG
+from archive.common.text.date_parsing_utils import (
+    find_first_date,
+    find_month_year,
+)
 from archive.common.text.prompt_delimit_utils import wrap_untrusted
 from archive.llm.llm_gateway import LlmGateway, LlmUnavailableError, Messages
 from archive.retrieval.search_service import SearchFilters, SearchHit
 from archive.validation.input_model import Question
 
 logger = logging.getLogger(__name__)
+
+_YEAR_RE = re.compile(SUPERSEDED_YEAR_RE)
 
 
 class PolicyChoice(BaseModel):
@@ -133,6 +145,65 @@ def _pick_version(versions: list[SearchHit], as_of: str) -> SearchHit | None:
     return None
 
 
+def _question_period(
+    question_text: str, as_of_date: str | None
+) -> tuple[str, datetime.date, datetime.date] | None:
+    """The calendar year or month the question names, if only that.
+
+    Returns None when the question holds an exact date, names no year,
+    or when `as_of_date` falls outside the named period.
+
+    Returns:
+        (label, first day, first day after the period) or None.
+    """
+    if find_first_date(question_text) is not None:
+        return None
+    month_start = find_month_year(question_text)
+    if month_start is not None:
+        start = datetime.date.fromisoformat(month_start)
+        label = SUPERSEDED_MONTH_PERIOD_FORMAT.format(
+            year=start.year, month=start.month
+        )
+        end = (start + datetime.timedelta(days=31)).replace(day=1)
+    else:
+        found = _YEAR_RE.search(question_text)
+        if found is None:
+            return None
+        start = datetime.date(int(found.group(1)), 1, 1)
+        label = found.group(1)
+        end = datetime.date(start.year + 1, 1, 1)
+    if as_of_date and not start.isoformat() <= as_of_date < end.isoformat():
+        return None
+    return label, start, end
+
+
+def _overlap_days(
+    hit: SearchHit, start: datetime.date, end: datetime.date
+) -> int:
+    """Days of [start, end) covered by the version's effective interval."""
+    chunk = hit.chunk
+    if not chunk.effective_from:
+        return 0
+    from_day = max(start, datetime.date.fromisoformat(chunk.effective_from))
+    to_day = end
+    if chunk.effective_to:
+        to_day = min(end, datetime.date.fromisoformat(chunk.effective_to))
+    return max((to_day - from_day).days, 0)
+
+
+def _pick_dominant_version(
+    versions: list[SearchHit], start: datetime.date, end: datetime.date
+) -> SearchHit | None:
+    """Pick the version covering most days of the period; ties go later."""
+    best: SearchHit | None = None
+    best_key = (0, "")
+    for hit in versions:
+        key = (_overlap_days(hit, start, end), hit.chunk.effective_from or "")
+        if key[0] > 0 and key > best_key:
+            best, best_key = hit, key
+    return best
+
+
 def _order_hits(
     picked: SearchHit, versions: list[SearchHit], top_hits: list[SearchHit]
 ) -> list[SearchHit]:
@@ -151,24 +222,60 @@ def _order_hits(
     return ordered
 
 
-def _build_note(picked: SearchHit, as_of_date: str | None) -> str:
-    """Describe the version in force for the draft prompt."""
-    chunk = picked.chunk
+def _format_period(chunk: Chunk) -> str:
+    """Effective interval of a version as text."""
     if chunk.effective_to:
-        period = SUPERSEDED_PERIOD_CLOSED.format(
+        return SUPERSEDED_PERIOD_CLOSED.format(
             effective_from=chunk.effective_from,
             effective_to=chunk.effective_to,
         )
-    else:
-        period = SUPERSEDED_PERIOD_OPEN.format(
-            effective_from=chunk.effective_from
-        )
+    return SUPERSEDED_PERIOD_OPEN.format(effective_from=chunk.effective_from)
+
+
+def _build_period_note(picked: SearchHit, period_label: str) -> str:
+    """Describe the version in force for most of a year or month."""
+    chunk = picked.chunk
+    return SUPERSEDED_PERIOD_NOTE_TEMPLATE.format(
+        period=period_label,
+        doc_id=chunk.doc_id,
+        version=chunk.version,
+        effective=_format_period(chunk),
+    )
+
+
+def _build_note(picked: SearchHit, as_of_date: str | None) -> str:
+    """Describe the version in force for the draft prompt."""
+    chunk = picked.chunk
     return SUPERSEDED_NOTE_TEMPLATE.format(
         as_of=as_of_date or SUPERSEDED_TODAY_LABEL,
         doc_id=chunk.doc_id,
         version=chunk.version,
-        period=period,
+        period=_format_period(chunk),
     )
+
+
+def _select_version(
+    question: Question, plan: QuestionPlan, versions: list[SearchHit]
+) -> tuple[SearchHit, str] | None:
+    """Pick the version and build its note, or None when none applies.
+
+    A question naming only a year (or month) gets the version in force
+    for most of that period; otherwise the version in force on the day.
+    """
+    period = _question_period(question.question, plan.as_of_date)
+    if period is not None:
+        label, start, end = period
+        dominant = _pick_dominant_version(versions, start, end)
+        if dominant is not None:
+            logger.info(LOG_SUPERSEDED_PERIOD_RULE, question.id, label)
+            return dominant, _build_period_note(dominant, label)
+    as_of = plan.as_of_date or _today()
+    picked = _pick_version(versions, as_of)
+    if picked is None:
+        logger.info(LOG_SUPERSEDED_NO_VERSION, question.id, as_of)
+        return None
+    logger.info(LOG_SUPERSEDED_EXACT_RULE, question.id, as_of)
+    return picked, _build_note(picked, plan.as_of_date)
 
 
 def run_superseded(
@@ -182,7 +289,8 @@ def run_superseded(
     The LLM picks the policy series from the list of all policies
     (it can match across French and English). All versions of that
     series are listed; the one in force on `plan.as_of_date` (or today
-    when there is no date) goes first.
+    when there is no date) goes first. A question naming only a year
+    or month gets the version in force for most of that period.
 
     Args:
         question: The question being answered.
@@ -205,11 +313,10 @@ def run_superseded(
     if series is None:
         return None
     versions = _series_versions(policies, series)
-    as_of = plan.as_of_date or _today()
-    picked = _pick_version(versions, as_of)
-    if picked is None:
-        logger.info(LOG_SUPERSEDED_NO_VERSION, question.id, as_of)
+    selected = _select_version(question, plan, versions)
+    if selected is None:
         return None
+    picked, note = selected
     top_hits = search.hybrid_search(
         question.question,
         SearchFilters(doc_types=[DocType.POLICY.value]),
@@ -217,5 +324,5 @@ def run_superseded(
     )
     return RecipeResult(
         hits=_order_hits(picked, versions, top_hits),
-        note=_build_note(picked, plan.as_of_date),
+        note=note,
     )
