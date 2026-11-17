@@ -2,6 +2,7 @@ from typing import cast
 
 import pytest
 
+from archive.agent.recipes import aggregation_service
 from archive.agent.recipes.aggregation_service import (
     ExtractedAmount,
     ExtractedAmounts,
@@ -302,6 +303,51 @@ def test_unusable_llm_amounts_are_ignored(found: ExtractedAmount) -> None:
     assert not result.draft.evidence_sufficient
 
 
+def test_blank_quote_amount_mismatch_and_duplicates_are_rejected() -> None:
+    hits = [invoice("d1", CODE, "100,00"), typo_invoice("d2")]
+    llm = FakeLlm(
+        [
+            ExtractedAmount(doc_id="d2", amount="20 $", quote="  "),
+            ExtractedAmount(
+                doc_id="d2", amount="99 $", quote="Sxxx : 20,00 $"
+            ),
+        ]
+    )
+
+    result = _run(_plan(project_codes=[CODE]), hits, llm)
+
+    assert _answer(result) == "100.00"
+
+
+def test_cad_marked_llm_amount_is_read() -> None:
+    hits = [invoice("d1", CODE, "100,00"), typo_invoice("d2")]
+    hits[1].chunk.text = hits[1].chunk.text.replace("20,00 $", "20,00 CAD")
+    llm = FakeLlm(
+        [
+            ExtractedAmount(
+                doc_id="d2", amount="20,00 CAD", quote="Sxxx : 20,00 CAD"
+            )
+        ]
+    )
+
+    result = _run(_plan(project_codes=[CODE]), hits, llm)
+
+    assert _answer(result) == "120.00"
+
+
+def test_duplicate_llm_doc_keeps_the_first_answer() -> None:
+    hits = [invoice("d1", CODE, "100,00"), typo_invoice("d2")]
+    quote = "Sxxx : 20,00 $"
+    llm = FakeLlm(
+        [
+            ExtractedAmount(doc_id="d2", amount="20 $", quote=quote),
+            ExtractedAmount(doc_id="d2", amount="99 $", quote=quote),
+        ]
+    )
+
+    assert _answer(_run(_plan(project_codes=[CODE]), hits, llm)) == "120.00"
+
+
 def test_llm_failure_gives_a_partial_answer() -> None:
     hits = [invoice("d1", CODE, "100,00"), typo_invoice("d2")]
 
@@ -321,3 +367,78 @@ def test_every_invoice_unreadable_defers_to_direct() -> None:
         _run(_plan(project_codes=[CODE]), [garbage], FakeLlm(fail=True))
         is None
     )
+
+
+def test_invoice_without_client_line_is_unverified_not_matched() -> None:
+    nameless = _hit("d2", "Sous-total : 50 $\nTOTAL : 1 $", "invoice", [CODE])
+    hits = [invoice("d1", CODE, "100,00"), nameless]
+
+    result = _run(_plan(client="Ville de Val"), hits)
+
+    assert _answer(result) == "100.00"
+    assert result is not None and result.draft is not None
+    assert not result.draft.evidence_sufficient
+
+
+def test_similar_client_names_are_not_confused() -> None:
+    hits = [invoice("d1", CODE, "100,00")]
+
+    assert _run(_plan(client="Ville de Valtrie"), hits) is None
+
+
+def test_exact_manager_name_wins_over_a_fuzzy_neighbour() -> None:
+    hits = [
+        sheet("s1", "BRV-2021-01", "Lina Zabihi"),
+        sheet("s2", "BRV-2021-02", "Lena Zabihi"),
+        invoice("d1", "BRV-2021-01", "100,00"),
+        invoice("d2", "BRV-2021-02", "50,00"),
+    ]
+
+    result = _run(_plan(project_manager="Lina Zabihi"), hits)
+
+    assert _answer(result) == "100.00"
+
+
+def test_typo_in_manager_name_still_matches_when_nothing_is_exact() -> None:
+    hits = [
+        sheet("s1", "BRV-2021-01", "Olivier Gauvreaux"),
+        invoice("d1", "BRV-2021-01", "100,00"),
+    ]
+
+    assert _answer(_run(_plan(project_manager="Olivier Gauvreau"), hits)) == (
+        "100.00"
+    )
+
+
+def test_non_brv_identifier_defers_even_with_a_brv_code() -> None:
+    hits = [invoice("d1", CODE, "100,00")]
+
+    assert _run(_plan(project_codes=[CODE, "F-2021-1286"]), hits) is None
+
+
+def test_chunks_merge_in_numeric_order() -> None:
+    first = _hit(
+        "d1", "Facturé à : Ville de Val\nProjet : x", "invoice", [CODE]
+    )
+    second = _hit("d1", "Sous-total : 5 $", "invoice", [CODE])
+    tenth = _hit("d1", "TOTAL : 6 $", "invoice", [CODE])
+    first.chunk.chunk_id, second.chunk.chunk_id = "d1#2", "d1#3"
+    tenth.chunk.chunk_id = "d1#10"
+
+    result = _run(_plan(project_codes=[CODE]), [tenth, second, first])
+
+    assert result is not None
+    assert result.hits[0].chunk.text.splitlines()[-1] == "TOTAL : 6 $"
+
+
+def test_capped_listing_flags_the_draft_insufficient(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(aggregation_service, "AGG_LIST_CAP", 1)
+    hits = [invoice("d1", CODE, "100,00")]
+
+    result = _run(_plan(project_codes=[CODE]), hits)
+
+    assert _answer(result) == "100.00"
+    assert result is not None and result.draft is not None
+    assert not result.draft.evidence_sufficient
