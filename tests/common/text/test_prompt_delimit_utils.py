@@ -33,9 +33,7 @@ def test_tag_markers_inside_the_text_are_escaped(
 ) -> None:
     wrapped = wrap_untrusted("question", f"a {marker} b")
 
-    assert wrapped == f"<question>
-a {escaped} b
-</question>"
+    assert wrapped == f"<question>\na {escaped} b\n</question>"
 
 
 def test_other_tags_are_left_alone() -> None:
