@@ -16,7 +16,6 @@ UNVERIFIED_RGB = (210, 50, 50)
 VALUE_VERIFIED_RGB = (0, 90, 30)
 VALUE_UNVERIFIED_RGB = (130, 0, 0)
 LINE_TOP_TOLERANCE_PT = 3.0
-VIEWER_GRACE_S = 90.0
 TEMPLATE_PATH = Path(__file__).parent / "template" / "viewer_template.html"
 DATA_PLACEHOLDER = "__VIEWER_DATA__"
 # Template token -> sibling file inlined in its place (CSS and JS).

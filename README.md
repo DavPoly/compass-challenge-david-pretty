@@ -51,35 +51,11 @@ Points à connaître :
   ligne `not_found` ; `answers.jsonl` contient toujours une ligne par id.
 - Le détail du déroulement est journalisé sur stderr.
 
-### Visualiseur (vérifier les réponses)
-
-Après chaque exécution, `answer.py` écrit une trace par question dans
-`traces/<run>/` et une page statique `viewer/<run>/index.html` (son chemin
-est affiché dans les logs ; l'ouvrir dans un navigateur, sans serveur).
-Elle montre, pour chaque question :
-
-- les citations avec la page du PDF surlignée : vert si la citation est
-  vérifiée, rouge si elle est absente du document ;
-- les valeurs de la réponse non retrouvées dans les preuves ;
-- pourquoi la confiance est haute, moyenne ou basse ;
-- les sources en conflit, côte à côte.
-
-Garde-fou de temps : les images ne sont produites que dans le budget
-(échéance globale + 90 s) ; au-delà, la page affiche les citations en
-texte seul. Une erreur du visualiseur ne change ni `answers.jsonl` ni le
-code de sortie.
-
-Pour le reconstruire, avec la correction en plus :
-
-```bash
-python <kit>/score.py answers.jsonl --json --details > scores.json
-python scripts/build_viewer.py traces/<run> --scores scores.json
-```
-
 ### Mode interactif (poser des questions en direct)
 
-Le visualiseur peut aussi tourner en local et répondre à de nouvelles
-questions saisies dans sa barre du haut :
+Le visualiseur est une application web locale : elle répond aux
+questions saisies dans sa barre du haut et permet de vérifier les
+réponses :
 
 ```bash
 python scripts/serve.py [--run traces/<run>]
@@ -95,10 +71,11 @@ http://127.0.0.1:8000 (`--port` pour changer de port). La page montre :
 - les questions posées, sauvegardées dans `traces/live/` et rechargées
   au redémarrage, sous « Questions posées ».
 
-`--run` ajoute à la page un run terminé d'`answer.py`. Le serveur écoute
-sur `127.0.0.1` uniquement, sans authentification, et traite une seule
-question à la fois. `answer.py` n'est pas modifié et le visualiseur
-statique continue de fonctionner sans serveur.
+Après chaque exécution, `answer.py` écrit une trace par question dans
+`traces/<run>/` ; `--run traces/<run>` l'ajoute à la page pour la
+vérifier (citations vérifiées ou non, confiance, sources en conflit).
+Le serveur écoute sur `127.0.0.1` uniquement, sans authentification, et
+traite une seule question à la fois. `answer.py` ne dépend pas du serveur.
 
 ## Messages d'erreur
 
