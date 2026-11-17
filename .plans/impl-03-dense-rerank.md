@@ -233,15 +233,23 @@ After the final merge, `pre-commit-review` (`reviewer` + `quality`) runs on
 - Batch 0: `refactor/retrieval-layout` (T0); spike S has no branch.
 - Batch A: `feat/hybrid-search` (T2), `feat/dense-ingest` (T3),
   `feat/model-loaders` (T1).
+- Batch B: `feat/dense-integrate` (T4 code); the rebuild and the
+  measurements run on B in the main checkout.
 
 ## Resume point
 
-2026-11-16, batch A complete. T0, T2, T3 and T1 are merged on
-`feat/dense-rerank`: hybrid RRF search with an optional rerank step,
-a dense ingest pass under the sync budget, and real model loaders
-(fastembed, daemon threads joined with a timeout). Checks green,
-451 tests warm. T4 (batch B, alone) is next, but it is blocked on
-the dense model choice: fastembed 0.9.1 supports only
-multilingual-e5-large among the e5 candidates, and no spike results
-are in the repo. Also open: the global-deadline pipeline test
-flakes on a cold cache (passes warm) — needs a fix round.
+2026-11-16, batch A and T4 code complete. T0-T3, T1 (real loaders @
+6efdafb) and `feat/dense-integrate` are on `feat/dense-rerank`:
+hybrid RRF search, dense ingest pass, MiniLM constants,
+measure_recall --dense/--rerank flags, 15-entry paraphrase gold.
+Checks green, 463 tests warm. User decision: dense =
+paraphrase-multilingual-MiniLM-L12-v2, DENSE_MAX_TOKENS = 128
+(probe: 0.22 GB ONNX, dim 384, no prefixes, fastembed built-in;
+e5-small is absent from the 0.9.1 registry). Phase 2 (next, main
+checkout, corpus/ lives there): rebuild the index with dense
+(MiniLM download into .cache/), measure dense x rerank on both gold
+sets with jina (1.11 GB, 1K ctx) and bge-reranker-v2-m3-int8
+(0.57 GB, 8k) — both approved; bge-reranker-base dropped as
+English-only — then decide RERANK_ENABLED, commit index/ (chore),
+time startup cold/warm. Also open: the global-deadline pipeline
+test flakes on a cold cache (passes warm) — needs a fix round.
