@@ -36,14 +36,19 @@ class BusyError(Exception):
     """Raised when a question is already being answered."""
 
 
-def next_live_id(live_dir: Path) -> str:
-    """Next ``live-NNN`` id: one more than the highest saved trace."""
+def highest_live_number(live_dir: Path) -> int:
+    """Highest ``live-NNN`` number among the saved traces, else 0."""
     numbers = []
     for path in live_dir.glob(f"{LIVE_ID_PREFIX}*{LIVE_TRACE_SUFFIX}"):
         match = _LIVE_ID.fullmatch(path.stem)
         if match:
             numbers.append(int(match.group(1)))
-    return LIVE_ID_FORMAT.format(number=max(numbers, default=0) + 1)
+    return max(numbers, default=0)
+
+
+def next_live_id(live_dir: Path) -> str:
+    """Next ``live-NNN`` id: one more than the highest saved trace."""
+    return LIVE_ID_FORMAT.format(number=highest_live_number(live_dir) + 1)
 
 
 class AskService:
@@ -62,6 +67,7 @@ class AskService:
         self._live_dir = live_dir
         self._clock = clock
         self._lock = threading.Lock()
+        self._last_issued = 0
 
     @property
     def is_busy(self) -> bool:
@@ -92,7 +98,7 @@ class AskService:
     def _answer(
         self, text: str, emit: Callable[[StepEvent], None]
     ) -> QuestionView:
-        question = Question(id=next_live_id(self._live_dir), question=text)
+        question = Question(id=self._issue_id(), question=text)
         started_s = self._clock()
         parts = answer_one(question, self._engine, on_step=emit)
         elapsed_s = self._clock() - started_s
@@ -101,3 +107,9 @@ class AskService:
         logger.info(LOG_QUESTION_SAVED, question.id, elapsed_s)
         emit_step(emit, PipelineStep.RENDER)
         return question_view_from_trace(trace, self._viewer, is_live=True)
+
+    def _issue_id(self) -> str:
+        """Next id, never one already given out, even if unsaved."""
+        number = max(highest_live_number(self._live_dir), self._last_issued)
+        self._last_issued = number + 1
+        return LIVE_ID_FORMAT.format(number=self._last_issued)
