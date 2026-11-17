@@ -41,6 +41,10 @@ of Xavier Ricard in the staff directory", "subcontract contract for \
 project BRV-2023-14"). Use "evidence_sufficient" true with not_found \
 only when nothing in the documents points to where the answer could \
 be.
+- Chain citations: when the answer is reached through a chain of \
+documents (e.g. invoice, project sheet, staff directory), cite each \
+document of the chain that links the question to the answer, and \
+nothing else.
 """
 
 USER_PROMPT = """\
