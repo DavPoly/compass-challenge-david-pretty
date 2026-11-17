@@ -282,7 +282,7 @@ def _first_doc(text: str, as_of: str | None, listed: list[SearchHit]) -> str:
     return outcome[0][0]
 
 
-def test_year_only_picks_the_version_in_force_most_of_the_year() -> None:
+def test_year_only_picks_the_latest_version_of_the_year() -> None:
     text = "Quelle est l'allocation en vigueur en 2025 ?"
 
     assert _first_doc(text, "2025-01-01", TRAVEL) == "doc_t3"
@@ -296,24 +296,24 @@ def test_year_only_note_names_the_period_and_version() -> None:
 
     assert outcome is not None
     note = outcome[1] or ""
-    assert "most of 2025" in note
+    assert "Latest policy version in force during 2025" in note
     assert "doc_t3" in note
     assert "from 2025-01-17" in note
 
 
-def test_year_starting_mid_january_picks_the_version_in_force() -> None:
+def test_earlier_year_picks_the_latest_version_in_it() -> None:
     text = "Quelle est l'allocation pour 2022 ?"
 
     assert _first_doc(text, "2022-01-01", TRAVEL) == "doc_t2"
 
 
-def test_december_change_keeps_the_older_version_for_the_year() -> None:
+def test_december_change_picks_the_new_version_for_the_year() -> None:
     listed = [
         _hit("doc_old", "1", "2020-01-01", "2024-12-20"),
         _hit("doc_new", "2", "2024-12-20"),
     ]
 
-    assert _first_doc("Taux en 2024 ?", "2024-01-01", listed) == "doc_old"
+    assert _first_doc("Taux en 2024 ?", "2024-01-01", listed) == "doc_new"
 
 
 def test_exact_date_in_question_keeps_the_exact_day_rule() -> None:
@@ -325,10 +325,10 @@ def test_exact_date_in_question_keeps_the_exact_day_rule() -> None:
     )
 
 
-def test_month_and_year_picks_the_version_covering_most_of_it() -> None:
+def test_month_and_year_picks_the_latest_version_in_it() -> None:
     text = "Quelle allocation en janvier 2025 ?"
 
-    assert _first_doc(text, "2025-01-01", TRAVEL) == "doc_t2"
+    assert _first_doc(text, "2025-01-01", TRAVEL) == "doc_t3"
 
 
 def test_year_without_overlap_falls_back_to_the_exact_day() -> None:
