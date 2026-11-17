@@ -9,8 +9,8 @@ from archive.ingest.build import index_builder_service
 from archive.ingest.build.index_builder_service import (
     IndexBuildError,
     _clear_previous_index,
-    _parse_file,
     build,
+    parse_file,
 )
 from archive.ingest.build.manifest_gateway import (
     ManifestError,
@@ -116,7 +116,7 @@ def test_aborted_build_leaves_no_manifest(
     def abort(*_args: Any, **_kwargs: Any) -> Any:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(index_builder_service, "_parse_all", abort)
+    monkeypatch.setattr(index_builder_service, "parse_all", abort)
     with pytest.raises(KeyboardInterrupt):
         build(mini_corpus, index_dir, WORKERS)
     assert not (index_dir / "manifest.json").exists()
@@ -138,7 +138,7 @@ def test_unexpected_worker_error_is_a_counted_failure(
 
     monkeypatch.setattr(index_builder_service, "chunk_document", explode)
     path = sorted(mini_corpus.glob("*.pdf"))[0]
-    parsed = _parse_file(path)
+    parsed = parse_file(path)
     assert parsed.entry is None
     assert parsed.doc_id == path.stem
     assert parsed.error == "ValueError: boom"

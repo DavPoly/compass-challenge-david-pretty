@@ -20,6 +20,7 @@ from archive.ingest.build.manifest_gateway import (
     file_entry,
     write_manifest,
 )
+from archive.ingest.build.version_series_utils import with_effective_to
 from archive.ingest.chunking_service import chunk_document
 from archive.ingest.metadata.metadata_service import extract_metadata
 from archive.ingest.parse.pdf_parse_gateway import (
@@ -47,7 +48,7 @@ class BuildReport:
 
 
 @dataclass(frozen=True)
-class _ParsedFile:
+class ParsedFile:
     """Worker result: chunks and manifest entry, or the parse error."""
 
     doc_id: str
@@ -89,18 +90,22 @@ def build(
     try:
         gateway.ensure_collection()
         buffer: list[Chunk] = []
-        for parsed in _parse_all(paths, workers):
+        series_chunks: list[Chunk] = []
+        for parsed in parse_all(paths, workers):
             if parsed.entry is None:
                 failed.append(parsed.doc_id)
                 logger.warning("skipped %s: %s", parsed.doc_id, parsed.error)
                 continue
             manifest[parsed.doc_id] = parsed.entry
-            buffer.extend(parsed.chunks)
+            for chunk in parsed.chunks:
+                is_series = chunk.series is not None
+                (series_chunks if is_series else buffer).append(chunk)
             chunk_count += len(parsed.chunks)
             if len(buffer) >= BUILD_FLUSH_CHUNKS:
                 gateway.upsert(buffer)
                 buffer = []
         gateway.upsert(buffer)
+        gateway.upsert(with_effective_to(series_chunks))
     finally:
         gateway.close()
     write_manifest(index_dir, manifest)
@@ -126,23 +131,22 @@ def _clear_previous_index(index_dir: Path) -> None:
         ) from error
 
 
-def _parse_all(
-    paths: list[Path], workers: int | None
-) -> Iterator[_ParsedFile]:
+def parse_all(paths: list[Path], workers: int | None) -> Iterator[ParsedFile]:
+    """Parse PDFs in worker processes, yielding results in path order."""
     with ProcessPoolExecutor(max_workers=workers) as executor:
         yield from executor.map(
-            _parse_file, paths, chunksize=BUILD_MAP_CHUNKSIZE
+            parse_file, paths, chunksize=BUILD_MAP_CHUNKSIZE
         )
 
 
-def _parse_file(path: Path) -> _ParsedFile:
+def parse_file(path: Path) -> ParsedFile:
     """Worker: parse, extract metadata and chunk one PDF."""
     try:
         doc = parse_pdf(path)
         chunks = chunk_document(doc, extract_metadata(doc))
     except PdfParseError as error:
-        return _ParsedFile(path.stem, None, [], str(error))
+        return ParsedFile(path.stem, None, [], str(error))
     except Exception as error:  # any worker failure must not abort the build
         message = f"{type(error).__name__}: {error}"
-        return _ParsedFile(path.stem, None, [], message)
-    return _ParsedFile(path.stem, file_entry(path), chunks, None)
+        return ParsedFile(path.stem, None, [], message)
+    return ParsedFile(path.stem, file_entry(path), chunks, None)
