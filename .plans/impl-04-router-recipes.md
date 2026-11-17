@@ -274,3 +274,15 @@ decisions log, and the roadmap's decision to drop the classifier).
   Questions phase ~14 s for 20 questions.
 - Review fix round 1: `fix/agg-review` (aggregation), `fix/prompt-route-review`
   (delimiters, route dates, superseded).
+- 2026-11-17 review round 1 (reviewer + quality, no blockers) fixed:
+  LLM amount fallback checks (empty quote, amount vs quote, CAD),
+  token-boundary client match + exact-first manager match, no
+  whole-text client fallback (excluded + flagged), non-BRV code →
+  direct, numeric chunk order, single-line amount regex, cap signals,
+  shared untrusted-text delimiting (`archive/common/text/
+  prompt_delimit_utils.py`), superseded prompt escaping, month-end date
+  clamp / garbage date → direct, retrieved ids limited to prompt hits.
+  575 tests, checks green, check_recipes s07/s10/s20 exact.
+- Deferred (accepted): duplicated gold loading in `scripts/`;
+  `scripts/` over the 5-file folder limit (pre-existing); moving
+  `normalize_amount` to `archive/common/text/`.
