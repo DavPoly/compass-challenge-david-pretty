@@ -27,10 +27,11 @@ EMAIL_PATTERN = r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+"
 
 # Document type detection: the first title phrase found in the header
 # decides. Phrases are accent-free, lowercase word sequences, matched
-# with typo tolerance (see `PHRASE_FUZZY_*`).
+# with typo tolerance for multi-word phrases (see `PHRASE_FUZZY_*`);
+# a single word must match exactly.
 DOC_TYPE_HEADER_LINES = 12
 HEADER_WORD_PATTERN = r"[a-z0-9]+"
-PHRASE_FUZZY_CUTOFF = 0.8
+PHRASE_FUZZY_CUTOFF = 0.88
 PHRASE_FUZZY_MIN_LENGTH = 5
 EMAIL_HEADER_PATTERN = r"(?:de|from)\s*:\s*\S"
 DOC_TYPE_PHRASES: dict[DocType, tuple[str, ...]] = {

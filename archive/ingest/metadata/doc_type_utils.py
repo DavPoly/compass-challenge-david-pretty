@@ -51,9 +51,9 @@ def _type_of_line(line: str) -> DocType | None:
 
 
 def _contains_phrase(words: list[str], phrase: str) -> bool:
-    """Whether `words` hold `phrase`, up to a typo for long phrases."""
+    """Whether `words` hold `phrase`; multi-word phrases tolerate typos."""
     size = len(phrase.split())
-    is_fuzzy = len(phrase) >= PHRASE_FUZZY_MIN_LENGTH
+    is_fuzzy = size > 1 and len(phrase) >= PHRASE_FUZZY_MIN_LENGTH
     for start in range(len(words) - size + 1):
         window = " ".join(words[start : start + size])
         if window == phrase:

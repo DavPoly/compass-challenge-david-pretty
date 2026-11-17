@@ -167,6 +167,13 @@ def test_labelled_date_beats_an_earlier_date_in_the_body() -> None:
     assert _meta(text).doc_date == "2024-03-12"
 
 
+def test_labelled_date_window_ignores_blank_lines() -> None:
+    blanks = "\n" * 20
+    text = f"Note{blanks}Date : 2024-03-12"
+
+    assert _meta(text).doc_date == "2024-03-12"
+
+
 def test_earliest_full_date_beats_the_month_year_period() -> None:
     text = "Compte rendu\nvisite du 5 mai 2021\nGarantie : juin 2025"
 
