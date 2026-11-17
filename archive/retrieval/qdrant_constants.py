@@ -6,6 +6,9 @@ QDRANT_SUBDIR = "qdrant"
 UPSERT_BATCH_SIZE = 64
 SCROLL_PAGE_SIZE = 256
 SERIES_SCROLL_CAP = 100_000
+LOG_SERIES_CAP_REACHED = (
+    "series scroll hit the %d chunk cap: effective_to may be incomplete"
+)
 HASH_INDEX_MASK = 0x7FFFFFFF
 POINT_ID_NAMESPACE_NAME = "archive.chunk"
 FIELD_IDENTIFIERS = "identifiers"
