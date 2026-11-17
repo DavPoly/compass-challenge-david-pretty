@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from archive.common.config import AppConfig
@@ -6,6 +8,8 @@ from archive.pipeline.engine import engine_service
 from archive.pipeline.engine.engine_service import (
     Engine,
     answer_one,
+    corpus_is_ready,
+    has_pdfs,
     open_engine,
 )
 from archive.retrieval.search_service import SearchService
@@ -77,3 +81,21 @@ def test_open_engine_closes_search_on_exit(
         assert closed == []
 
     assert closed == [True]
+
+
+def test_has_pdfs_needs_an_existing_directory_with_a_pdf(
+    tmp_path: Path,
+) -> None:
+    assert not has_pdfs(tmp_path / "missing")
+    assert not has_pdfs(tmp_path)
+    (tmp_path / "notes.txt").write_text("x", encoding="utf-8")
+    assert not has_pdfs(tmp_path)
+    (tmp_path / "a.pdf").write_bytes(b"%PDF")
+    assert has_pdfs(tmp_path)
+
+
+def test_corpus_is_ready_logs_the_missing_corpus(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    assert not corpus_is_ready(tmp_path)
+    assert "No PDF found in corpus directory" in caplog.text

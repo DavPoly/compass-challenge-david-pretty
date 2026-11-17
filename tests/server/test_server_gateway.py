@@ -1,5 +1,6 @@
 import http.client
 import json
+import socket
 import threading
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -8,6 +9,7 @@ import pytest
 
 from archive.common.step_model import PipelineStep, StepEvent
 from archive.llm.llm_gateway import LlmUnavailableError
+from archive.server import server_gateway
 from archive.server.ask_service import BusyError
 from archive.server.server_gateway import (
     ServerContext,
@@ -22,6 +24,8 @@ BUSY_ERROR = (
 )
 WAIT_S = 5
 PNG_BYTES = b"\x89PNG"
+RESULT_EVENT_LINE = b"event: result\n"
+HTTP_LINE_END = "\r\n"
 
 
 def make_view() -> QuestionView:
@@ -82,23 +86,35 @@ class Running:
         self.port = port
         self.ask = ask
         self.rebuilds = 0
+        self.hook: Callable[[], None] = lambda: None
 
     def request(
-        self, method: str, path: str, body: bytes | None = None
+        self,
+        method: str,
+        path: str,
+        body: bytes | None = None,
+        headers: dict[str, str] | None = None,
     ) -> tuple[int, dict[str, str], bytes]:
         conn = http.client.HTTPConnection(
             "127.0.0.1", self.port, timeout=WAIT_S
         )
         try:
-            conn.request(method, path, body=body)
+            conn.request(method, path, body=body, headers=headers or {})
             response = conn.getresponse()
             headers = {k.lower(): v for k, v in response.getheaders()}
             return response.status, headers, response.read()
         finally:
             conn.close()
 
-    def post(self, payload: object) -> tuple[int, dict[str, str], bytes]:
-        return self.request("POST", "/api/ask", json.dumps(payload).encode())
+    def post(
+        self, payload: object, headers: dict[str, str] | None = None
+    ) -> tuple[int, dict[str, str], bytes]:
+        return self.request(
+            "POST",
+            "/api/ask",
+            json.dumps(payload).encode(),
+            {"Content-Type": "application/json", **(headers or {})},
+        )
 
 
 @pytest.fixture
@@ -113,6 +129,7 @@ def running(tmp_path: Path) -> Iterator[Running]:
 
     def on_result() -> None:
         state.rebuilds += 1
+        state.hook()
 
     server = create_server(0, ServerContext(ask, out_dir, on_result))
     state.port = server.server_address[1]
@@ -227,7 +244,9 @@ def test_unusable_question_is_400_with_french_error(
 
 @pytest.mark.parametrize("body", [b"not json", b"[]", b'{"q": "x"}', b""])
 def test_invalid_json_is_400(running: Running, body: bytes) -> None:
-    status, _, _ = running.request("POST", "/api/ask", body)
+    status, _, _ = running.request(
+        "POST", "/api/ask", body, {"Content-Type": "application/json"}
+    )
 
     assert status == 400
 
@@ -294,7 +313,12 @@ def test_server_survives_a_disconnect_mid_stream(running: Running) -> None:
     conn = http.client.HTTPConnection(
         "127.0.0.1", running.port, timeout=WAIT_S
     )
-    conn.request("POST", "/api/ask", json.dumps({"question": "Q"}))
+    conn.request(
+        "POST",
+        "/api/ask",
+        json.dumps({"question": "Q"}),
+        {"Content-Type": "application/json"},
+    )
     assert running.ask.entered.wait(timeout=WAIT_S)
     conn.close()
     gate.set()
@@ -302,6 +326,162 @@ def test_server_survives_a_disconnect_mid_stream(running: Running) -> None:
     status, _, _ = running.request("GET", "/api/health")
 
     assert status == 200
+
+
+def test_charset_parameter_on_the_json_content_type_is_accepted(
+    running: Running,
+) -> None:
+    status, _, _ = running.post(
+        {"question": "Q"},
+        {"Content-Type": "application/json; charset=utf-8"},
+    )
+
+    assert status == 200
+
+
+@pytest.mark.parametrize(
+    "content_type", ["text/plain", "application/x-www-form-urlencoded", ""]
+)
+def test_non_json_content_type_is_415(
+    running: Running, content_type: str
+) -> None:
+    status, _, body = running.post(
+        {"question": "Q"}, {"Content-Type": content_type}
+    )
+
+    assert status == 415
+    assert json.loads(body)["error"]
+    assert running.rebuilds == 0
+
+
+def test_missing_content_type_is_415(running: Running) -> None:
+    body = json.dumps({"question": "Q"}).encode()
+
+    status, _, _ = running.request("POST", "/api/ask", body)
+
+    assert status == 415
+
+
+@pytest.mark.parametrize(
+    "origin", ["http://evil.example", "null", "https://127.0.0.1:{port}"]
+)
+def test_foreign_origin_is_403(running: Running, origin: str) -> None:
+    status, _, body = running.post(
+        {"question": "Q"},
+        {"Origin": origin.format(port=running.port)},
+    )
+
+    assert status == 403
+    assert json.loads(body)["error"]
+    assert running.rebuilds == 0
+
+
+@pytest.mark.parametrize(
+    "origin", ["http://127.0.0.1:{port}", "http://localhost:{port}"]
+)
+def test_local_origin_is_accepted(running: Running, origin: str) -> None:
+    status, _, _ = running.post(
+        {"question": "Q"}, {"Origin": origin.format(port=running.port)}
+    )
+
+    assert status == 200
+
+
+@pytest.mark.parametrize("host", ["evil.example", "evil.example:{port}"])
+@pytest.mark.parametrize("method_path", [("GET", "/"), ("GET", "/api/health")])
+def test_foreign_host_is_403_on_every_route(
+    running: Running, host: str, method_path: tuple[str, str]
+) -> None:
+    method, path = method_path
+
+    status, _, _ = running.request(
+        method, path, headers={"Host": host.format(port=running.port)}
+    )
+
+    assert status == 403
+
+
+def test_foreign_host_cannot_ask(running: Running) -> None:
+    status, _, _ = running.post({"question": "Q"}, {"Host": "evil.example"})
+
+    assert status == 403
+
+
+def test_localhost_host_is_accepted(running: Running) -> None:
+    status, _, _ = running.request(
+        "GET", "/api/health", headers={"Host": f"localhost:{running.port}"}
+    )
+
+    assert status == 200
+
+
+def test_stalled_body_is_dropped_after_the_timeout(
+    running: Running, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(server_gateway._Handler, "timeout", 0.3)
+    sock = socket.create_connection(("127.0.0.1", running.port), WAIT_S)
+    sock.settimeout(WAIT_S)
+    request_head = (
+        "POST /api/ask HTTP/1.1",
+        f"Host: 127.0.0.1:{running.port}",
+        "Content-Type: application/json",
+        "Content-Length: 50",
+        "",
+        "{",
+    )
+    sock.sendall(HTTP_LINE_END.join(request_head).encode())
+    try:
+        reply = sock.recv(1024)
+    finally:
+        sock.close()
+
+    status, _, _ = running.request("GET", "/api/health")
+    assert reply == b""
+    assert status == 200
+
+
+def test_result_event_is_sent_before_the_hook_runs(
+    running: Running,
+) -> None:
+    result_received = threading.Event()
+    hook_saw_result: list[bool] = []
+
+    def hook() -> None:
+        hook_saw_result.append(result_received.wait(timeout=WAIT_S))
+
+    running.hook = hook
+    conn = http.client.HTTPConnection(
+        "127.0.0.1", running.port, timeout=WAIT_S
+    )
+    conn.request(
+        "POST",
+        "/api/ask",
+        json.dumps({"question": "Q"}),
+        {"Content-Type": "application/json"},
+    )
+    response = conn.getresponse()
+    while response.readline() != RESULT_EVENT_LINE:
+        pass
+    result_received.set()
+    response.read()
+    conn.close()
+
+    assert hook_saw_result == [True]
+
+
+def test_failing_hook_is_only_logged(
+    running: Running, caplog: pytest.LogCaptureFixture
+) -> None:
+    def hook() -> None:
+        raise RuntimeError("rebuild broke")
+
+    running.hook = hook
+
+    status, _, body = running.post({"question": "Q"})
+
+    assert status == 200
+    assert parse_events(body)[-1][0] == "result"
+    assert "result hook failed" in caplog.text
 
 
 def test_second_server_on_a_taken_port_fails(running: Running) -> None:

@@ -138,3 +138,22 @@ def test_failed_answer_saves_nothing_and_frees_the_lock(
 
     assert not service.is_busy
     assert not (tmp_path / "live").exists()
+
+
+def test_failed_trace_write_does_not_reuse_its_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = make_service(tmp_path, [0.0, 1.0, 2.0, 3.0])
+    real_write = service._writer.write
+
+    def failing_write(trace: Any) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(service._writer, "write", failing_write)
+    with pytest.raises(OSError):
+        service.ask("Q1 ?", lambda event: None)
+    monkeypatch.setattr(service._writer, "write", real_write)
+
+    view = service.ask("Q2 ?", lambda event: None)
+
+    assert view.id == "live-002"
