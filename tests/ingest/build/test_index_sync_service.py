@@ -3,9 +3,11 @@ import shutil
 from pathlib import Path
 
 import pytest
+from dense_fakes import FakeEmbedder, dense_point_count, has_dense
 
 from archive.common.chunk_model import Chunk, ChunkKind
 from archive.ingest.build import index_builder_service, index_sync_service
+from archive.ingest.build.build_constants import SYNC_DENSE_BUDGET_S
 from archive.ingest.build.index_builder_service import build
 from archive.ingest.build.index_sync_service import (
     _refresh_series,
@@ -217,3 +219,90 @@ def test_removing_latest_version_resets_previous_effective_to(
     finally:
         gateway.close()
     assert ends == {"a#0": None}
+
+
+@pytest.fixture
+def dense_synced(
+    synced: tuple[Path, Path, list[Path]],
+) -> tuple[Path, Path, list[Path]]:
+    corpus, index, pdfs = synced
+    build(corpus, index, WORKERS, FakeEmbedder())
+    return corpus, index, pdfs
+
+
+def added_doc_chunks(index: Path, doc_id: str) -> int:
+    with SearchService.open(index) as service:
+        hits = service.list_by_filter(SearchFilters(), LIST_CAP)
+    return sum(hit.chunk.doc_id == doc_id for hit in hits)
+
+
+def test_sync_embeds_new_docs_on_dense_index(
+    dense_synced: tuple[Path, Path, list[Path]],
+) -> None:
+    corpus, index, pdfs = dense_synced
+    before = dense_point_count(index)
+    shutil.copy(pdfs[BASE_DOCS], corpus)
+    report = sync_index(corpus, index, WORKERS, FakeEmbedder())
+    new_chunks = added_doc_chunks(index, pdfs[BASE_DOCS].stem)
+    assert report.sparse_only == 0
+    assert dense_point_count(index) == before + new_chunks
+
+
+def test_sync_budget_exhausted_goes_sparse_only(
+    dense_synced: tuple[Path, Path, list[Path]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    corpus, index, pdfs = dense_synced
+    before = dense_point_count(index)
+    now = [0.0]
+
+    def ticking_clock() -> float:
+        now[0] += SYNC_DENSE_BUDGET_S
+        return now[0]
+
+    monkeypatch.setattr(index_sync_service, "_monotonic", ticking_clock)
+    embedder = FakeEmbedder()
+    shutil.copy(pdfs[BASE_DOCS], corpus)
+    report = sync_index(corpus, index, WORKERS, embedder)
+    assert embedder.batch_count == 0
+    new_id = pdfs[BASE_DOCS].stem
+    assert report.sparse_only == added_doc_chunks(index, new_id) > 0
+    assert dense_point_count(index) == before
+    assert new_id in doc_ids(index)
+
+
+def test_embedder_failure_degrades_to_sparse_only(
+    dense_synced: tuple[Path, Path, list[Path]],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    corpus, index, pdfs = dense_synced
+    shutil.copy(pdfs[BASE_DOCS], corpus)
+    report = sync_index(
+        corpus, index, WORKERS, FakeEmbedder(fail_after_batches=0)
+    )
+    assert report.added == [pdfs[BASE_DOCS].stem]
+    assert report.sparse_only > 0
+    assert "embedding failed" in caplog.text
+    assert pdfs[BASE_DOCS].stem in doc_ids(index)
+
+
+def test_embedder_on_sparse_index_adds_no_dense(
+    synced: tuple[Path, Path, list[Path]],
+) -> None:
+    corpus, index, pdfs = synced
+    shutil.copy(pdfs[BASE_DOCS], corpus)
+    embedder = FakeEmbedder()
+    report = sync_index(corpus, index, WORKERS, embedder)
+    assert report.added == [pdfs[BASE_DOCS].stem]
+    assert report.sparse_only == 0
+    assert embedder.batch_count == 0
+    assert not has_dense(index)
+
+
+def test_full_build_fallback_uses_embedder(
+    synced: tuple[Path, Path, list[Path]],
+) -> None:
+    corpus, index, _ = synced
+    (index / "manifest.json").unlink()
+    sync_index(corpus, index, WORKERS, FakeEmbedder())
+    assert has_dense(index)
