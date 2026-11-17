@@ -1,6 +1,6 @@
 # Plan: step 07 traces + click-to-verify viewer (`impl-07-traces-viewer`)
 
-**Status:** in-progress
+**Status:** done (pending sample run + demo viewer by user)
 **BASE:** `4ca11879694d8ee3b12f5ce9360894c514243909` (feat/traces-viewer)
 **Subagent branches:** feat/traces-core, feat/viewer-render, feat/viewer-build, feat/viewer-template, feat/viewer-wiring
 **Parent:** `.plans/impl-00-roadmap.md` step 07; `.plans/global-architecture.md` §6.
@@ -196,3 +196,18 @@ in one Agent call, and the main agent does not implement tasks inline.
   a 90 s grace after the global deadline, and is text-only when no time is
   left (user choice B).
 - 2026-11-17: correct/wrong marks come from a saved `score.py --json --details` output (`--scores`), so the code does not depend on the kit.
+- 2026-11-17: render interface is `render_evidence(pdf_path, evidence, is_verified,
+  out_stem)`; the build service consumes it through a Protocol so T2 and T3 ran in
+  parallel. `scripts/build_viewer.py` moved from T3 to T5 (needs both).
+- 2026-11-17: `.gitignore` `viewer/`/`traces/` anchored to the repo root (the
+  unanchored pattern ignored `archive/viewer/`).
+- 2026-11-17: review fixes: traces always match the answers line (late, expired
+  and never-started questions); trace file names get a short hash on collision
+  risk; quote matching shared in `archive/common/text/quote_match_utils.py`;
+  evidence doc ids normalized and kept inside `corpus/`; new `unchecked` state
+  when grounding crashed; full-width crops; URL hash encoded.
+- 2026-11-17: accepted/skipped: `archive/common/text/` holds 6 non-test files
+  (one over the limit; split into a subfolder later if touched); unverified
+  quotes matched by text, not (doc, text) pairs (needs a step-06 report change,
+  rare); render budget checked between evidences only (corpus PDFs ≤ 6.6 KB);
+  T3 merge 810 lines (over the 700 soft budget, one cohesive service).
