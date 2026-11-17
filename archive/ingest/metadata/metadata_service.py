@@ -128,7 +128,8 @@ def _find_labelled_date(text: str) -> str | None:
 
     A line gives its full date, or the first day of its month-year.
     """
-    header = normalize_for_match(text).split("\n")[:DATE_HEADER_LINES]
+    lines = normalize_for_match(text).split("\n")
+    header = [line for line in lines if line.strip()][:DATE_HEADER_LINES]
     for line in header:
         label = _DATE_LABEL.search(line)
         if label is None:
