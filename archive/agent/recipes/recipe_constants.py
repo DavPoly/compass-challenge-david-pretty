@@ -8,12 +8,13 @@ AGG_LIST_CAP = 3000
 # "Ville de ..." stay below 0.7. 0.85 sits between the two.
 CLIENT_MATCH_RATIO = 0.85
 PROJECT_CODE_PATTERN = r"BRV-\d{4}-\d{2}"
-CAD_SUFFIX_RE = r"\s*\bCAD\b"
+CAD_MARK_RE = r"\$?\s*\bCAD\b"
+DOLLAR_MARK = "$"
 INVOICE_AMOUNT_TAIL = r"\s*:\s*(?P<value>.+?)\s*$"
 CLIENT_LINE_RE = r"^\s*(?:factur\w*\s*[aà]|bill\s*to)\s*:\s*(?P<value>.+?)\s*$"
 PROJECT_LINE_RE = r"^\s*(?:projet|project)\s*:\s*(?P<value>.+?)\s*$"
 SUBTOTAL_LINE_RE = r"^\s*(?:sous|sub)[-\s]?t\w{2,6}" + INVOICE_AMOUNT_TAIL
-TOTAL_LINE_RE = r"^\s*t[oa]t\w{1,2}" + INVOICE_AMOUNT_TAIL
+TOTAL_LINE_RE = r"^\s*t[oa]t\w{1,3}" + INVOICE_AMOUNT_TAIL
 MANAGER_ROW_RE = (
     r"^\s*(?:charg\w*\s+de\s+projet|project\s+manager)"
     r"\s*\|\s*(?P<value>.+?)\s*$"

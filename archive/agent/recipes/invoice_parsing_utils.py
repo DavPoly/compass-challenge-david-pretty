@@ -6,9 +6,10 @@ from decimal import Decimal
 from difflib import SequenceMatcher
 
 from archive.agent.recipes.recipe_constants import (
-    CAD_SUFFIX_RE,
+    CAD_MARK_RE,
     CLIENT_LINE_RE,
     CLIENT_MATCH_RATIO,
+    DOLLAR_MARK,
     PROJECT_LINE_RE,
     SUBTOTAL_LINE_RE,
     TOTAL_LINE_RE,
@@ -16,7 +17,7 @@ from archive.agent.recipes.recipe_constants import (
 from archive.common.text.text_normalize_utils import normalize_for_match
 from archive.validation.answer_validator import normalize_amount
 
-_CAD_SUFFIX = re.compile(CAD_SUFFIX_RE, re.IGNORECASE)
+_CAD_MARK = re.compile(CAD_MARK_RE, re.IGNORECASE)
 _CLIENT_LINE = re.compile(CLIENT_LINE_RE, re.IGNORECASE | re.MULTILINE)
 _PROJECT_LINE = re.compile(PROJECT_LINE_RE, re.IGNORECASE | re.MULTILINE)
 _SUBTOTAL_LINE = re.compile(SUBTOTAL_LINE_RE, re.IGNORECASE | re.MULTILINE)
@@ -51,7 +52,7 @@ def _read_amount(
     match = pattern.search(text)
     if match is None:
         return None, None
-    normalized = normalize_amount(_CAD_SUFFIX.sub("", match["value"]))
+    normalized = normalize_amount(_CAD_MARK.sub(DOLLAR_MARK, match["value"]))
     amount = Decimal(normalized) if normalized is not None else None
     return amount, match.group(0).strip()
 
