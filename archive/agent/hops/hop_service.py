@@ -17,7 +17,10 @@ from archive.agent.hops.hop_constants import (
     MISSING_QUERY_MAX_CHARS,
 )
 from archive.agent.hops.hop_model import HopPolicy
-from archive.agent.prompt_constants import MAX_PROMPT_CHUNKS
+from archive.agent.prompt_constants import (
+    MAX_PROMPT_CHUNKS,
+    NO_DOCUMENTS_MISSING,
+)
 from archive.agent.recipes.recipe_model import (
     RecipeResult,
     RecipeSearchPort,
@@ -25,7 +28,7 @@ from archive.agent.recipes.recipe_model import (
 from archive.agent.retrieve_service import dedupe_hits
 from archive.llm.llm_gateway import LlmGateway
 from archive.retrieval.search_service import SearchFilters, SearchHit
-from archive.validation.answer_model import AnswerStatus, DraftAnswer
+from archive.validation.answer_model import DraftAnswer
 from archive.validation.input_model import Question
 
 logger = logging.getLogger(__name__)
@@ -93,31 +96,41 @@ def _follow_up_hits(
     ]
 
 
+def needs_follow_up(current: DraftAnswer) -> bool:
+    """Return whether a draft names missing evidence worth searching.
+
+    True only when the draft is not `evidence_sufficient` and its
+    `missing` is non-blank and not the no-documents sentinel.
+    """
+    missing = (current.missing or "").strip()
+    if not missing or missing == NO_DOCUMENTS_MISSING:
+        return False
+    return not current.evidence_sufficient
+
+
 def _should_follow_up(
     current: DraftAnswer,
+    state: _LoopState,
     drafts_made: int,
     elapsed_s: float,
     policy: HopPolicy,
 ) -> bool:
     """Return whether another hop is allowed and worthwhile."""
-    if not (current.missing or "").strip():
-        return False
-    is_gap = (
-        not current.evidence_sufficient
-        or current.status is AnswerStatus.NOT_FOUND
-    )
-    if not is_gap:
+    if not state.original or not needs_follow_up(current):
         return False
     return drafts_made < policy.max_drafts and elapsed_s < policy.time_budget_s
 
 
 def _draft_next(
-    question: Question, state: _LoopState, llm: LlmGateway
+    question: Question,
+    state: _LoopState,
+    llm: LlmGateway,
+    note: str | None,
 ) -> DraftAnswer:
     """Draft from the current prompt hits and record them as used."""
     prompt_hits = state.prompt_hits()
     state.mark_used(prompt_hits)
-    return draft(question, prompt_hits, llm)
+    return draft(question, prompt_hits, llm, note=note)
 
 
 def _log_draft(
@@ -143,11 +156,13 @@ def run_hops(  # noqa: PLR0913 - frozen signature
     policy: HopPolicy,
     *,
     first_draft: DraftAnswer | None = None,
+    note: str | None = None,
 ) -> RecipeResult:
     """Draft an answer, adding hits while the draft lacks evidence.
 
-    The loop stops at the first of: `missing` is empty, the draft is
-    sufficient and not `not_found`, the follow-up search adds no new chunk,
+    The loop stops at the first of: the draft does not need a follow-up
+    (see `needs_follow_up`), there are no original hits, the follow-up
+    search adds no new chunk,
     `policy.max_drafts` is reached, or the time budget is spent. The
     follow-up search merges `hybrid_search(missing)` with a typed
     search over directory, project sheet and contract documents.
@@ -160,6 +175,7 @@ def run_hops(  # noqa: PLR0913 - frozen signature
         policy: Draft limit, upfront expansion and time budget.
         first_draft: A draft already made from `hits`; when given it
             is not repeated.
+        note: Extra context rendered into every draft prompt.
 
     Returns:
         A result with every hit that reached a prompt and the last
@@ -179,11 +195,11 @@ def run_hops(  # noqa: PLR0913 - frozen signature
         if policy.expand_upfront:
             state.expanded = True
             state.targeted = expand_by_identifiers(question, hits, search)
-        current = _draft_next(question, state, llm)
+        current = _draft_next(question, state, llm, note)
     drafts_made = 1
     _log_draft(question, drafts_made, current)
     while _should_follow_up(
-        current, drafts_made, policy.clock() - start, policy
+        current, state, drafts_made, policy.clock() - start, policy
     ):
         new_hits = _follow_up_hits(
             question, current.missing or "", state, search
@@ -193,7 +209,7 @@ def run_hops(  # noqa: PLR0913 - frozen signature
             break
         logger.info(LOG_FOLLOW_UP, question.id, drafts_made, len(new_hits))
         state.targeted = new_hits + state.targeted
-        current = _draft_next(question, state, llm)
+        current = _draft_next(question, state, llm, note)
         drafts_made += 1
         _log_draft(question, drafts_made, current)
     return RecipeResult(hits=list(state.used.values()), draft=current)

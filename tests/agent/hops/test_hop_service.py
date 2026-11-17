@@ -9,7 +9,10 @@ from archive.agent.hops.hop_constants import (
 )
 from archive.agent.hops.hop_model import HopPolicy
 from archive.agent.hops.hop_service import run_hops
-from archive.agent.prompt_constants import MAX_PROMPT_CHUNKS
+from archive.agent.prompt_constants import (
+    MAX_PROMPT_CHUNKS,
+    NO_DOCUMENTS_MISSING,
+)
 from archive.agent.recipes.recipe_model import RecipeResult
 from archive.common.chunk_model import Chunk, ChunkKind
 from archive.llm.llm_gateway import LlmGateway, Messages
@@ -175,7 +178,7 @@ def test_blank_missing_stops_the_loop() -> None:
     assert search.queries == []
 
 
-def test_not_found_with_missing_follows_up_despite_sufficient() -> None:
+def test_not_found_despite_sufficient_does_not_follow_up() -> None:
     lead = ANSWER.model_copy(
         update={
             "status": AnswerStatus.NOT_FOUND,
@@ -183,14 +186,49 @@ def test_not_found_with_missing_follows_up_despite_sufficient() -> None:
             "missing": "email of Lea Frechette",
         }
     )
-    llm = FakeLlm(lead, ANSWER)
+    llm = FakeLlm(lead)
+    search = FakeSearch(plain=[_hit("doc_b")])
 
-    result = _run(
-        llm, FakeSearch(plain=[_hit("doc_b")]), HopPolicy.multi_hop()
+    _run(llm, search, HopPolicy.multi_hop())
+
+    assert len(llm.calls) == 1
+    assert search.queries == []
+
+
+def test_sentinel_missing_never_follows_up() -> None:
+    llm = FakeLlm(_gap(f"  {NO_DOCUMENTS_MISSING} "))
+    search = FakeSearch(plain=[_hit("doc_b")])
+
+    _run(llm, search, HopPolicy.multi_hop())
+
+    assert len(llm.calls) == 1
+    assert search.queries == []
+
+
+def test_no_original_hits_never_follows_up() -> None:
+    llm = FakeLlm(_gap())
+    search = FakeSearch(plain=[_hit("doc_b")])
+
+    _run(llm, search, HopPolicy.multi_hop(), hits=[])
+
+    assert search.queries == []
+
+
+def test_note_reaches_every_draft() -> None:
+    llm = FakeLlm(_gap(), ANSWER)
+    gateway: LlmGateway = llm  # type: ignore[assignment]
+
+    run_hops(
+        QUESTION,
+        [_hit("doc_a")],
+        FakeSearch(plain=[_hit("doc_b")]),
+        gateway,
+        HopPolicy.multi_hop(),
+        note="use the newest",
     )
 
     assert len(llm.calls) == 2
-    assert result.draft == ANSWER
+    assert all("use the newest" in llm.user_prompt(n) for n in range(2))
 
 
 def test_answered_sufficient_with_missing_does_not_follow_up() -> None:

@@ -157,10 +157,14 @@ def test_recipe_with_its_own_draft_keeps_all_its_hits(
     assert len(retrieved_ids) == MAX_PROMPT_CHUNKS + 3
 
 
+notes: list[str | None] = []
+
+
 def _spy_run_hops(
     monkeypatch: pytest.MonkeyPatch, result: RecipeResult
 ) -> list[tuple[HopPolicy, DraftAnswer | None]]:
     seen: list[tuple[HopPolicy, DraftAnswer | None]] = []
+    notes.clear()
 
     def fake_run_hops(
         question: Question,
@@ -170,8 +174,10 @@ def _spy_run_hops(
         policy: HopPolicy,
         *,
         first_draft: DraftAnswer | None = None,
+        note: str | None = None,
     ) -> RecipeResult:
         seen.append((policy, first_draft))
+        notes.append(note)
         return result
 
     monkeypatch.setattr(answer_service, "run_hops", fake_run_hops)
@@ -242,3 +248,22 @@ def test_insufficient_draft_without_missing_skips_the_safety_net(
 
     assert answer == first
     assert seen == []
+
+
+def test_safety_net_receives_the_recipe_note(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _plan_as(monkeypatch, QuestionFamily.SUPERSEDED)
+    monkeypatch.setattr(
+        answer_service,
+        "run_superseded",
+        lambda *args: RecipeResult(hits=[_hit("doc_a")], note="newest"),
+    )
+    first = LLM_ANSWER.model_copy(
+        update={"evidence_sufficient": False, "missing": "email of Lea"}
+    )
+    _spy_run_hops(monkeypatch, RecipeResult(hits=[], draft=RECIPE_ANSWER))
+
+    _run(FakeLlm(first))
+
+    assert notes == ["newest"]

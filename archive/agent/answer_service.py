@@ -2,7 +2,7 @@
 
 from archive.agent.draft_service import draft
 from archive.agent.hops.hop_model import HopPolicy
-from archive.agent.hops.hop_service import run_hops
+from archive.agent.hops.hop_service import needs_follow_up, run_hops
 from archive.agent.prompt_constants import MAX_PROMPT_CHUNKS
 from archive.agent.recipes.aggregation_service import run_aggregation
 from archive.agent.recipes.recipe_model import RecipeResult, RecipeSearchPort
@@ -50,9 +50,21 @@ def _draft_with_safety_net(
     search: RecipeSearchPort,
     llm: LlmGateway,
 ) -> tuple[DraftAnswer, set[str]]:
+    """Draft from a recipe result; hop once more on a named gap.
+
+    The first draft uses the top `MAX_PROMPT_CHUNKS` hits and the
+    recipe note. When `needs_follow_up` holds, a safety-net hop loop
+    continues from it, carrying the same note.
+
+    Returns:
+        The final draft and the doc ids of every hit that was used.
+
+    Raises:
+        LlmUnavailableError: the LLM could not give a valid draft.
+    """
     prompt_hits = result.hits[:MAX_PROMPT_CHUNKS]
     drafted = draft(question, prompt_hits, llm, note=result.note)
-    if not _needs_safety_net(drafted):
+    if not needs_follow_up(drafted):
         return drafted, _doc_ids(prompt_hits)
     hopped = run_hops(
         question,
@@ -61,14 +73,10 @@ def _draft_with_safety_net(
         llm,
         HopPolicy.safety_net(),
         first_draft=drafted,
+        note=result.note,
     )
     final = hopped.draft if hopped.draft is not None else drafted
     return final, _doc_ids(prompt_hits) | _doc_ids(hopped.hits)
-
-
-def _needs_safety_net(drafted: DraftAnswer) -> bool:
-    has_missing = bool(drafted.missing and drafted.missing.strip())
-    return not drafted.evidence_sufficient and has_missing
 
 
 def _doc_ids(hits: list[SearchHit]) -> set[str]:
