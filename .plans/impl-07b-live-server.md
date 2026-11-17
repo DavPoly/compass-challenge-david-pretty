@@ -198,3 +198,9 @@ in one Agent call, and the main agent does not implement tasks inline.
 - 2026-11-17: accepted: rebuild re-renders every image (fine for a demo-sized
   run); rebuild thread is a daemon; several commits over the 200-line budget
   (new files with their tests).
+- 2026-11-17: (user request) record the pipeline steps in every trace and show
+  them as a "Déroulement" timeline under the answer. Frozen: `StepRecord{step,
+  detail, elapsed_s}` in `QuestionTrace.steps` (default empty);
+  `QuestionView.steps: list[StepView{step, label, detail, elapsed_s}]`; French
+  labels shared from `archive/common/step_constants.py`. Branches
+  `feat/trace-steps` (Python) and `feat/steps-timeline` (template).
