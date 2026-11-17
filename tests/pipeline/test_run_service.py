@@ -6,9 +6,12 @@ import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
+from pydantic import BaseModel
 
+from archive.agent.route.route_model import QuestionFamily, QuestionPlan
 from archive.common.config import AppConfig
 from archive.ingest.build.index_builder_service import (
     IndexBuildError,
@@ -68,7 +71,10 @@ class StubContext:
 
 
 class FakeLlm:
-    """Cites the first document of the prompt; blocks on SLOW_MARK."""
+    """Cites the first document of the prompt; blocks on SLOW_MARK.
+
+    `call_count` counts draft calls only; plan calls answer `direct`.
+    """
 
     def __init__(self, failure: Exception | None = None) -> None:
         self.failure = failure
@@ -78,8 +84,10 @@ class FakeLlm:
         self._lock = threading.Lock()
 
     def complete_json(
-        self, messages: Messages, schema: type[DraftAnswer]
-    ) -> DraftAnswer:
+        self, messages: Messages, schema: type[BaseModel]
+    ) -> Any:
+        if schema is QuestionPlan:
+            return QuestionPlan(family=QuestionFamily.DIRECT)
         with self._lock:
             self.call_count += 1
         prompt = messages[-1]["content"]
@@ -195,7 +203,7 @@ def test_duplicate_id_answers_only_the_first_question(
     assert fake_llm.call_count == 1
 
 
-def test_zero_hits_makes_no_llm_call(
+def test_zero_hits_makes_no_draft_call(
     indexed: tuple[AppConfig, str], fake_llm: FakeLlm, tmp_path: Path
 ) -> None:
     questions = write_questions(

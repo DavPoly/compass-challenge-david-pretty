@@ -78,3 +78,6 @@ remove what is listed here without a decisions-log entry in this file.
 - 2026-11-16: skeleton-first ordering; only step 01 is detailed up front.
 - 2026-11-16: `Chunk` lives in `archive/common/chunk_model.py` (third file in
   `common/`), because both ingest and retrieval depend on it.
+- 2026-11-17: step 04 routes with regex plus one LLM plan call; the
+  local classifier and its generated training set were dropped to save
+  time before the deadline. Score 35.64/45 after step 04.

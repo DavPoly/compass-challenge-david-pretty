@@ -37,3 +37,11 @@ STOPWORDS = STOPWORDS_FR | STOPWORDS_EN
 
 # Corpus and pipeline share this glob.
 PDF_GLOB = "*.pdf"
+
+# Untrusted text delimited inside LLM prompts.
+QUESTION_TAG = "question"
+DOCUMENT_TAG = "document"
+UNTRUSTED_TAG_PATTERN = r"<(/?){tag}"
+# The doubled backslash survives the re.sub template: "<\question".
+UNTRUSTED_TAG_ESCAPE = r"<\\{tag}"
+UNTRUSTED_BLOCK = "<{tag}{attributes}>\n{text}\n</{tag}>"
