@@ -146,3 +146,63 @@ def test_metadata_reads_all_pages() -> None:
 
     assert metadata.identifiers == ["BRV-2023-06"]
     assert metadata.doc_date == "2023-01-02"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Rapport mensuel n° 4\nPériode : août 2023", "2023-08-01"),
+        ("Monthly report\nPeriod: March 2022", "2022-03-01"),
+        ("Bottin\nMise à jour : 1er septembre 2026", "2026-09-01"),
+        ("Note\nReport date: 2024-02-03", "2024-02-03"),
+    ],
+)
+def test_labelled_header_date_and_period(text: str, expected: str) -> None:
+    assert _meta(text).doc_date == expected
+
+
+def test_labelled_date_beats_an_earlier_date_in_the_body() -> None:
+    text = "Facture\nDate : 2024-03-12\nRéf. contrat du 2020-01-05"
+
+    assert _meta(text).doc_date == "2024-03-12"
+
+
+def test_earliest_full_date_beats_the_month_year_period() -> None:
+    text = "Compte rendu\nvisite du 5 mai 2021\nGarantie : juin 2025"
+
+    assert _meta(text).doc_date == "2021-05-05"
+
+
+def test_month_year_without_label_is_the_last_resort() -> None:
+    assert _meta("Résumé de janvier 2022").doc_date == "2022-01-01"
+
+
+def test_policy_gets_version_effective_date_and_series() -> None:
+    text = (
+        "Politique de télétravail\n"
+        "Version 3 — En vigueur le 1er janvier 2027\n"
+        "1. Objet"
+    )
+
+    metadata = _meta(text)
+
+    assert metadata.doc_type == "policy"
+    assert metadata.version == "3"
+    assert metadata.effective_from == "2027-01-01"
+    assert metadata.series == "politique de teletravail"
+    assert metadata.doc_date == "2027-01-01"
+
+
+def test_policy_without_version_line_has_no_version_fields() -> None:
+    metadata = _meta("Politique de télétravail\n1. Objet")
+
+    assert metadata.doc_type == "policy"
+    assert metadata.version is None
+    assert metadata.series is None
+
+
+def test_non_policy_text_with_version_line_is_not_versioned() -> None:
+    metadata = _meta("Note technique\nVersion 2 — Effective 2022-08-24")
+
+    assert metadata.doc_type == "technical_note"
+    assert metadata.version is None
