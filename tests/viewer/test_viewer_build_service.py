@@ -1,6 +1,8 @@
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -123,6 +125,7 @@ def build(
     renderer: FakeRenderer,
     until_s: float | None = None,
     scores: Path | None = None,
+    now: Callable[[], datetime] = datetime.now,
 ) -> dict[str, object]:
     template = tmp_path / "template.html"
     template.write_text(TEMPLATE, encoding="utf-8")
@@ -134,6 +137,7 @@ def build(
         render=renderer,
         scores_path=scores,
         template_path=template,
+        now=now,
     )
     index = build_viewer(request)
     text = index.read_text(encoding="utf-8")
@@ -243,6 +247,17 @@ def test_exhausted_budget_skips_rendering(tmp_path: Path) -> None:
     assert renderer.calls == []
     evidence = data["questions"][0]["evidence"][0]  # type: ignore[index]
     assert evidence["state"] == "not_rendered"
+
+
+def test_generated_at_uses_injected_clock(tmp_path: Path) -> None:
+    write_trace(tmp_path / "traces", make_trace("q1"))
+    fixed = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+
+    data = build(tmp_path, FakeRenderer(), now=lambda: fixed)
+
+    assert data["generated_at"] == fixed.astimezone().isoformat(
+        timespec="seconds"
+    )
 
 
 def test_scores_give_accuracy_by_confidence(tmp_path: Path) -> None:

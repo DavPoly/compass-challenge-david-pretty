@@ -108,6 +108,7 @@ class ViewerRequest:
     render: EvidenceRenderer
     scores_path: Path | None = None
     template_path: Path = TEMPLATE_PATH
+    now: Callable[[], datetime] = datetime.now
 
 
 @dataclass(frozen=True)
@@ -140,19 +141,27 @@ def build_viewer(request: ViewerRequest) -> Path:
     scores = _load_scores(request.scores_path)
     request.out_dir.mkdir(parents=True, exist_ok=True)
     traces = _load_traces(request.trace_dir)
-    questions = [_question_view(t, request, scores) for t in traces]
-    data = ViewerData(
-        run_id=traces[0].run_id if traces else "",
-        generated_at=datetime.now().astimezone().isoformat(timespec="seconds"),
-        is_scored=scores is not None,
-        summary=_summary(questions, scores is not None),
-        questions=questions,
-    )
+    data = _make_viewer_data(traces, scores, request)
     page = _embed(template, data, request.template_path)
     target = request.out_dir / INDEX_FILENAME
     target.write_text(page, encoding=VIEWER_ENCODING)
     logger.info(LOG_VIEWER_WRITTEN, target)
     return target
+
+
+def _make_viewer_data(
+    traces: list[QuestionTrace],
+    scores: dict[str, _Score] | None,
+    request: ViewerRequest,
+) -> ViewerData:
+    questions = [_question_view(t, request, scores) for t in traces]
+    return ViewerData(
+        run_id=traces[0].run_id if traces else "",
+        generated_at=request.now().astimezone().isoformat(timespec="seconds"),
+        is_scored=scores is not None,
+        summary=_summary(questions, scores is not None),
+        questions=questions,
+    )
 
 
 def _read_template(path: Path) -> str:
@@ -348,9 +357,8 @@ def _try_render(
         return None
     try:
         return request.render(pdf_path, evidence, is_verified, out_stem)
-    except (
-        Exception
-    ):  # renderer is a boundary: one bad PDF must not stop the page
+    # The renderer is a boundary: one bad PDF must not stop the page.
+    except Exception:  # noqa: BLE001
         logger.warning(
             LOG_RENDER_FAILED, evidence.doc_id, out_stem.name, exc_info=True
         )
