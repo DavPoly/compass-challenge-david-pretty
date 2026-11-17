@@ -132,3 +132,7 @@ def test_non_positive_k_returns_nothing() -> None:
 
     assert retrieve("la facture", search, 0) == []
     assert search.calls == []
+
+
+def test_typed_share_is_a_valid_fraction() -> None:
+    assert 0 < RETRIEVE_TYPED_SHARE <= 1

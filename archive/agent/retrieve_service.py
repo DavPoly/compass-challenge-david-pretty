@@ -73,7 +73,7 @@ def retrieve(question: str, search: SearchPort, k: int) -> list[SearchHit]:
     hints = detect_doc_type_hints(question)
     typed: list[SearchHit] = []
     if hints:
-        typed_slots = min(k, math.ceil(k * RETRIEVE_TYPED_SHARE))
+        typed_slots = math.ceil(k * RETRIEVE_TYPED_SHARE)
         filters = SearchFilters(doc_types=[hint.value for hint in hints])
         typed = search.hybrid_search(question, filters, typed_slots)
     merged = _dedupe(typed[:k])
