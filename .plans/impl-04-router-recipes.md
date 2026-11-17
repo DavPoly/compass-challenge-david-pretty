@@ -267,3 +267,8 @@ decisions log, and the roadmap's decision to drop the classifier).
   Fix: aggregation needs a money measure (None → direct) and the route
   prompt keeps hours/counts out of aggregation.
 - Fix round: `fix/agg-money-only` (s11 guard).
+- 2026-11-17 user scored run after the s11 fix: 35.64/45 (was 33.30;
+  acceptance met). Exactitude 22.50/30 (12/16), fiabilité 9.32/10
+  (4/4), citations 3.82/5. direct, aggregation, superseded, conflict,
+  unanswerable all 100%; multi_hop 0/4 (s04/s05/s08/s15, step 05).
+  Questions phase ~14 s for 20 questions.
