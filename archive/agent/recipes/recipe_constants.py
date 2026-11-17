@@ -100,14 +100,14 @@ SUPERSEDED_NOTE_TEMPLATE = (
     "for the answer."
 )
 SUPERSEDED_PERIOD_NOTE_TEMPLATE = (
-    "Policy version in force for most of {period}: document {doc_id}, "
+    "Latest policy version in force during {period}: document {doc_id}, "
     "version {version}, effective {effective}. The other listed "
     "versions of this policy are superseded and must not be used "
     "for the answer."
 )
 SUPERSEDED_YEAR_RE = r"(?<![\d-])((?:19|20)\d{2})(?![\d-])"
 SUPERSEDED_MONTH_PERIOD_FORMAT = "{year:04d}-{month:02d}"
-LOG_SUPERSEDED_PERIOD_RULE = "question %s: version in force for most of %s"
+LOG_SUPERSEDED_PERIOD_RULE = "question %s: latest version in force during %s"
 LOG_SUPERSEDED_EXACT_RULE = "question %s: version in force on %s"
 SUPERSEDED_PERIOD_OPEN = "from {effective_from}"
 SUPERSEDED_PERIOD_CLOSED = "from {effective_from} to {effective_to}"

@@ -177,31 +177,26 @@ def _question_period(
     return label, start, end
 
 
-def _overlap_days(
-    hit: SearchHit, start: datetime.date, end: datetime.date
-) -> int:
-    """Days of [start, end) covered by the version's effective interval."""
-    chunk = hit.chunk
-    if not chunk.effective_from:
-        return 0
-    from_day = max(start, datetime.date.fromisoformat(chunk.effective_from))
-    to_day = end
-    if chunk.effective_to:
-        to_day = min(end, datetime.date.fromisoformat(chunk.effective_to))
-    return max((to_day - from_day).days, 0)
-
-
-def _pick_dominant_version(
+def _pick_latest_in_period(
     versions: list[SearchHit], start: datetime.date, end: datetime.date
 ) -> SearchHit | None:
-    """Pick the version covering most days of the period; ties go later."""
-    best: SearchHit | None = None
-    best_key = (0, "")
-    for hit in versions:
-        key = (_overlap_days(hit, start, end), hit.chunk.effective_from or "")
-        if key[0] > 0 and key > best_key:
-            best, best_key = hit, key
-    return best
+    """Pick the latest-starting version in force during [start, end)."""
+    start_text, end_text = start.isoformat(), end.isoformat()
+    overlapping = [
+        hit
+        for hit in versions
+        if hit.chunk.effective_from
+        and hit.chunk.effective_from < end_text
+        and (
+            hit.chunk.effective_to is None
+            or hit.chunk.effective_to > start_text
+        )
+    ]
+    return max(
+        overlapping,
+        key=lambda hit: hit.chunk.effective_from or "",
+        default=None,
+    )
 
 
 def _order_hits(
@@ -233,7 +228,7 @@ def _format_period(chunk: Chunk) -> str:
 
 
 def _build_period_note(picked: SearchHit, period_label: str) -> str:
-    """Describe the version in force for most of a year or month."""
+    """Describe the latest version in force during a year or month."""
     chunk = picked.chunk
     return SUPERSEDED_PERIOD_NOTE_TEMPLATE.format(
         period=period_label,
@@ -259,16 +254,17 @@ def _select_version(
 ) -> tuple[SearchHit, str] | None:
     """Pick the version and build its note, or None when none applies.
 
-    A question naming only a year (or month) gets the version in force
-    for most of that period; otherwise the version in force on the day.
+    A question naming only a year (or month) gets the latest version in
+    force at any point of that period; otherwise the version in force
+    on the day.
     """
     period = _question_period(question.question, plan.as_of_date)
     if period is not None:
         label, start, end = period
-        dominant = _pick_dominant_version(versions, start, end)
-        if dominant is not None:
+        latest = _pick_latest_in_period(versions, start, end)
+        if latest is not None:
             logger.info(LOG_SUPERSEDED_PERIOD_RULE, question.id, label)
-            return dominant, _build_period_note(dominant, label)
+            return latest, _build_period_note(latest, label)
     as_of = plan.as_of_date or _today()
     picked = _pick_version(versions, as_of)
     if picked is None:
@@ -290,7 +286,7 @@ def run_superseded(
     (it can match across French and English). All versions of that
     series are listed; the one in force on `plan.as_of_date` (or today
     when there is no date) goes first. A question naming only a year
-    or month gets the version in force for most of that period.
+    or month gets the latest version in force during that period.
 
     Args:
         question: The question being answered.
