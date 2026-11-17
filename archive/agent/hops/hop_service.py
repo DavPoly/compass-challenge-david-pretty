@@ -4,9 +4,9 @@ import logging
 from dataclasses import dataclass, field
 
 from archive.agent.draft_service import draft
+from archive.agent.hops.code_utils import non_email_codes
 from archive.agent.hops.expand_service import expand_by_identifiers
 from archive.agent.hops.hop_constants import (
-    EMAIL_MARKER,
     FOLLOW_UP_DOC_TYPES,
     FOLLOW_UP_K,
     FOLLOW_UP_TYPED_K,
@@ -22,6 +22,7 @@ from archive.agent.recipes.recipe_model import (
     RecipeResult,
     RecipeSearchPort,
 )
+from archive.agent.retrieve_service import dedupe_hits
 from archive.llm.llm_gateway import LlmGateway
 from archive.retrieval.search_service import SearchFilters, SearchHit
 from archive.validation.answer_model import AnswerStatus, DraftAnswer
@@ -54,7 +55,7 @@ class _LoopState:
         """
         linked_codes = _codes(self.targeted)
         linked = [hit for hit in self.original if _codes([hit]) & linked_codes]
-        merged = _dedupe(self.targeted + linked + self.original)
+        merged = dedupe_hits(self.targeted + linked + self.original)
         return merged[:MAX_PROMPT_CHUNKS]
 
     def mark_used(self, prompt_hits: list[SearchHit]) -> None:
@@ -65,20 +66,9 @@ class _LoopState:
 
 def _codes(hits: list[SearchHit]) -> set[str]:
     """Return the non-email identifiers carried by the hits."""
-    return {
-        code
-        for hit in hits
-        for code in hit.chunk.identifiers
-        if EMAIL_MARKER not in code
-    }
-
-
-def _dedupe(hits: list[SearchHit]) -> list[SearchHit]:
-    """Drop repeated chunk ids, keeping the first of each."""
-    unique: dict[str, SearchHit] = {}
-    for hit in hits:
-        unique.setdefault(hit.chunk.chunk_id, hit)
-    return list(unique.values())
+    return set(
+        non_email_codes(code for hit in hits for code in hit.chunk.identifiers)
+    )
 
 
 def _follow_up_hits(
@@ -97,7 +87,9 @@ def _follow_up_hits(
     found += search.hybrid_search(query, typed, FOLLOW_UP_TYPED_K)
     found += search.hybrid_search(query, None, FOLLOW_UP_K)
     return [
-        hit for hit in _dedupe(found) if hit.chunk.chunk_id not in state.used
+        hit
+        for hit in dedupe_hits(found)
+        if hit.chunk.chunk_id not in state.used
     ]
 
 
