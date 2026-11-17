@@ -44,7 +44,7 @@ def test_run_id_format() -> None:
     ("question_id", "expected"),
     [
         ("q-1_a.b", "q-1_a.b.json"),
-        ("a/b\c:d", "a_b_c_d.json"),
+        ("a/b\\c:d", "a_b_c_d.json"),
         ("../../etc", ".._.._etc.json"),
         ("..", "question.json"),
         (".", "question.json"),
