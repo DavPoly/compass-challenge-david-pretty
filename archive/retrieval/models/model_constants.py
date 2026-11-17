@@ -15,3 +15,16 @@ MODEL_THREADS = 4
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 MODEL_CACHE_DIR = _REPO_ROOT / ".cache" / "models"
+
+DENSE_QUERY_PREFIX = ""
+DENSE_PASSAGE_PREFIX = ""
+DENSE_MAX_TOKENS: int | None = None
+DENSE_EMBED_BATCH_SIZE = 32
+
+LOG_MODEL_TIMEOUT = "Model %s not ready after %.0f s; continuing without it."
+LOG_MODEL_FAILED = "Model %s failed to load: %s; continuing without it."
+LOG_DIM_MISMATCH = "Dense model %s returned dimension %d, expected %d."
+LOG_NO_TOKENIZER = (
+    "Dense model %s exposes no tokenizer; keeping the default max length."
+)
+LOG_RERANK_DISABLED = "Reranker disabled; skipping model load."
