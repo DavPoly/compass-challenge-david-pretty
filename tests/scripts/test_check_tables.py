@@ -1,9 +1,14 @@
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
 from archive.ingest.parse.pdf_parse_gateway import ParsedDoc
-from scripts.check_tables import check_invoice, parse_amount
+from scripts.check_tables import (
+    check_invoice,
+    parse_amount,
+    select_sample,
+)
 
 
 @pytest.mark.parametrize(
@@ -49,3 +54,9 @@ def test_invoice_items_not_matching_subtotal_fail() -> None:
 def test_invoice_without_subtotal_fails() -> None:
     doc = ParsedDoc(doc_id="x", pages=["Item | $1.00"], table_count=1)
     assert check_invoice(doc) == (False, "no subtotal found")
+
+
+def test_select_sample_skips_corrupt_pdf(tmp_path: Path) -> None:
+    (tmp_path / "broken.pdf").write_bytes(b"not a pdf")
+
+    assert select_sample(tmp_path) == []

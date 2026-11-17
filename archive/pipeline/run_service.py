@@ -237,9 +237,11 @@ def _sync_index_or_continue(config: AppConfig) -> None:
     """
     try:
         report = sync_index(config.corpus_dir, config.index_dir)
-    except Exception:  # noqa: BLE001
+    except Exception:
         # Best effort: any failure (pool, Qdrant, validation) must not
-        # stop the run, the existing index is still usable.
+        # stop the run, the existing index is still usable. A
+        # mid-sync failure may leave some docs missing for this
+        # run; the next sync re-adds them.
         logger.exception(LOG_SYNC_FAILED)
         return
     logger.info(

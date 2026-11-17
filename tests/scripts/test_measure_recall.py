@@ -84,3 +84,16 @@ def test_load_gold_names_line_of_row_missing_fields(
 
     with pytest.raises(ValueError, match=r"gold\.jsonl:1"):
         _load_gold(gold)
+
+
+def test_load_gold_names_line_of_non_list_citations(
+    tmp_path: Path,
+) -> None:
+    gold = tmp_path / "gold.jsonl"
+    gold.write_text(
+        '{"id": "q1", "question": "a?", "citations": 5}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=r"gold\.jsonl:1"):
+        _load_gold(gold)

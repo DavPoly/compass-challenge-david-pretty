@@ -43,6 +43,7 @@ def test_earliest_date_by_position_wins() -> None:
         ("Period: March 2022", "2022-03-01"),
         ("décembre 2023", "2023-12-01"),
         ("Period: Marhc 2022", "2022-03-01"),
+        ("marh 2023", None),
         ("Period: banana 2022", None),
         ("mais 2023", None),
         ("mai 2023", "2023-05-01"),
