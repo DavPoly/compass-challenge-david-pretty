@@ -22,7 +22,7 @@ from archive.agent.recipes.recipe_model import (
 )
 from archive.llm.llm_gateway import LlmGateway
 from archive.retrieval.search_service import SearchFilters, SearchHit
-from archive.validation.answer_model import DraftAnswer
+from archive.validation.answer_model import AnswerStatus, DraftAnswer
 from archive.validation.input_model import Question
 
 logger = logging.getLogger(__name__)
@@ -106,7 +106,13 @@ def _should_follow_up(
     policy: HopPolicy,
 ) -> bool:
     """Return whether another hop is allowed and worthwhile."""
-    if current.evidence_sufficient or not (current.missing or "").strip():
+    if not (current.missing or "").strip():
+        return False
+    is_gap = (
+        not current.evidence_sufficient
+        or current.status is AnswerStatus.NOT_FOUND
+    )
+    if not is_gap:
         return False
     return drafts_made < policy.max_drafts and elapsed_s < policy.time_budget_s
 
@@ -122,8 +128,8 @@ def run_hops(  # noqa: PLR0913 - frozen signature
 ) -> RecipeResult:
     """Draft an answer, adding hits while the draft lacks evidence.
 
-    The loop stops at the first of: the draft is sufficient,
-    `missing` is empty, the follow-up search adds no new chunk,
+    The loop stops at the first of: `missing` is empty, the draft is
+    sufficient and not `not_found`, the follow-up search adds no new chunk,
     `policy.max_drafts` is reached, or the time budget is spent. The
     follow-up search merges `hybrid_search(missing)` with a typed
     search over directory, project sheet and contract documents.

@@ -25,11 +25,13 @@ EVIDENCE_FIELD_DESCRIPTION = (
     "Verbatim quotes supporting the answer, one per document used."
 )
 SUFFICIENT_FIELD_DESCRIPTION = (
-    "True when the supplied excerpts are enough to answer or to "
-    "conclude not_found or conflict."
+    "True when the excerpts are enough to answer or to conclude "
+    "conflict, or not_found with no lead. False when they only give "
+    "part of the chain (an intermediate fact, not the one asked)."
 )
 MISSING_FIELD_DESCRIPTION = (
-    "What information is still needed when the evidence is not sufficient."
+    "The single next fact to look up, naming the entity, e.g. "
+    "'email address of Xavier Ricard in the staff directory'."
 )
 
 AMOUNT_RE = re.compile(

@@ -170,6 +170,50 @@ def test_blank_missing_stops_the_loop() -> None:
     assert search.queries == []
 
 
+def test_not_found_with_missing_follows_up_despite_sufficient() -> None:
+    lead = ANSWER.model_copy(
+        update={
+            "status": AnswerStatus.NOT_FOUND,
+            "evidence_sufficient": True,
+            "missing": "email of Lea Frechette",
+        }
+    )
+    llm = FakeLlm(lead, ANSWER)
+
+    result = _run(
+        llm, FakeSearch(plain=[_hit("doc_b")]), HopPolicy.multi_hop()
+    )
+
+    assert len(llm.calls) == 2
+    assert result.draft == ANSWER
+
+
+def test_answered_sufficient_with_missing_does_not_follow_up() -> None:
+    done = ANSWER.model_copy(update={"missing": "something"})
+    llm = FakeLlm(done)
+    search = FakeSearch(plain=[_hit("doc_b")])
+
+    _run(llm, search, HopPolicy.multi_hop())
+
+    assert len(llm.calls) == 1
+    assert search.queries == []
+
+
+def test_not_found_with_blank_missing_stops_the_loop() -> None:
+    lead = ANSWER.model_copy(
+        update={
+            "status": AnswerStatus.NOT_FOUND,
+            "evidence_sufficient": True,
+            "missing": " ",
+        }
+    )
+    llm = FakeLlm(lead)
+
+    _run(llm, FakeSearch(plain=[_hit("doc_b")]), HopPolicy.multi_hop())
+
+    assert len(llm.calls) == 1
+
+
 def test_none_missing_stops_the_loop() -> None:
     llm = FakeLlm(_gap(None))
 
