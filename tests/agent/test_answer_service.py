@@ -9,6 +9,7 @@ from archive.agent.prompt_constants import MAX_PROMPT_CHUNKS
 from archive.agent.recipes.recipe_model import RecipeResult
 from archive.agent.route.route_model import QuestionFamily, QuestionPlan
 from archive.common.chunk_model import Chunk, ChunkKind
+from archive.common.step_model import PipelineStep, StepEvent
 from archive.llm.llm_gateway import LlmGateway, Messages
 from archive.retrieval.search_service import SearchFilters, SearchHit
 from archive.validation.answer_model import AnswerStatus, DraftAnswer
@@ -340,3 +341,76 @@ def test_direct_outcome_has_no_note(
 
     assert outcome.note is None
     assert [hit.chunk.doc_id for hit in outcome.hits] == ["doc_a"]
+
+
+def _collect_steps(
+    monkeypatch: pytest.MonkeyPatch, llm: FakeLlm
+) -> list[StepEvent]:
+    events: list[StepEvent] = []
+    gateway: LlmGateway = llm  # type: ignore[assignment]
+    answer_question(QUESTION, FakeSearch(), gateway, events.append)
+    return events
+
+
+def test_direct_path_emits_route_retrieve_draft_in_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _plan_as(monkeypatch, QuestionFamily.DIRECT)
+
+    events = _collect_steps(monkeypatch, FakeLlm())
+
+    assert events == [
+        StepEvent(PipelineStep.ROUTE, "direct"),
+        StepEvent(PipelineStep.RETRIEVE, "1 extraits"),
+        StepEvent(PipelineStep.DRAFT, "brouillon 1"),
+    ]
+
+
+def test_recipe_retrieve_step_names_the_recipe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _plan_as(monkeypatch, QuestionFamily.AGGREGATION)
+    result = RecipeResult(hits=[_hit("doc_b")], draft=RECIPE_ANSWER)
+    monkeypatch.setattr(
+        answer_service, "run_aggregation", lambda *args: result
+    )
+
+    events = _collect_steps(monkeypatch, FakeLlm())
+
+    assert [event.step for event in events] == [
+        PipelineStep.ROUTE,
+        PipelineStep.RETRIEVE,
+    ]
+    assert events[1].detail == "1 extraits (aggregation)"
+
+
+def test_safety_net_emits_hop_with_the_missing_gap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _plan_as(monkeypatch, QuestionFamily.DIRECT)
+    first = LLM_ANSWER.model_copy(
+        update={"evidence_sufficient": False, "missing": "email of Lea"}
+    )
+    _spy_run_hops(monkeypatch, RecipeResult(hits=[], draft=RECIPE_ANSWER))
+
+    events = _collect_steps(monkeypatch, FakeLlm(first))
+
+    assert [event.step for event in events][-2:] == [
+        PipelineStep.DRAFT,
+        PipelineStep.HOP,
+    ]
+    assert events[-1].detail == "email of Lea"
+
+
+def test_failing_callback_does_not_break_answering(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _plan_as(monkeypatch, QuestionFamily.DIRECT)
+    gateway: LlmGateway = FakeLlm()  # type: ignore[assignment]
+
+    def broken(event: StepEvent) -> None:
+        raise RuntimeError("callback boom")
+
+    outcome = answer_question(QUESTION, FakeSearch(), gateway, broken)
+
+    assert outcome.draft == LLM_ANSWER

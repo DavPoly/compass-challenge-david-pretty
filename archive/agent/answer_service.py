@@ -14,6 +14,13 @@ from archive.agent.retrieve_constants import SEARCH_TOP_K
 from archive.agent.retrieve_service import retrieve
 from archive.agent.route.route_model import QuestionFamily, QuestionPlan
 from archive.agent.route.route_service import plan_question
+from archive.common.step_constants import (
+    DRAFT_DETAIL,
+    EXTRACTS_DETAIL,
+    FIRST_DRAFT_NUMBER,
+    RECIPE_DETAIL,
+)
+from archive.common.step_model import PipelineStep, StepCallback, emit_step
 from archive.llm.llm_gateway import LlmGateway
 from archive.retrieval.search_service import SearchHit
 from archive.validation.answer_model import DraftAnswer
@@ -36,7 +43,10 @@ class DraftOutcome:
 
 
 def answer_question(
-    question: Question, search: RecipeSearchPort, llm: LlmGateway
+    question: Question,
+    search: RecipeSearchPort,
+    llm: LlmGateway,
+    on_step: StepCallback | None = None,
 ) -> DraftOutcome:
     """Return the draft answer, its hits and the recipe note.
 
@@ -44,24 +54,40 @@ def answer_question(
     any safety-net hop hits); a recipe that drafts itself keeps all
     its hits. The note is the recipe note, None otherwise. An insufficient
     draft that names what is missing gets one safety-net hop.
+    ``on_step`` is told when each stage starts or ends; its failures
+    are ignored.
 
     Raises:
         LlmUnavailableError: the LLM could not give a valid draft.
     """
     started_s = time.monotonic()
     plan = plan_question(question, llm)
+    emit_step(on_step, PipelineStep.ROUTE, plan.family.value)
     result = _run_recipe(question, plan, search, llm)
     if result is None:
         hits = retrieve(question.question, search, SEARCH_TOP_K)
+        emit_step(
+            on_step,
+            PipelineStep.RETRIEVE,
+            EXTRACTS_DETAIL.format(count=len(hits)),
+        )
         if plan.family is QuestionFamily.MULTI_HOP:
             policy = replace(HopPolicy.multi_hop(), started_s=started_s)
             result = run_hops(question, hits, search, llm, policy)
         else:
             result = RecipeResult(hits=hits)
+    else:
+        emit_step(
+            on_step,
+            PipelineStep.RETRIEVE,
+            RECIPE_DETAIL.format(
+                count=len(result.hits), recipe=plan.family.value
+            ),
+        )
     if result.draft is not None:
         return DraftOutcome(result.draft, result.hits, result.note, plan)
     return _draft_with_safety_net(
-        question, result, plan, search, llm, started_s
+        question, result, plan, search, llm, started_s, on_step
     )
 
 
@@ -72,6 +98,7 @@ def _draft_with_safety_net(  # noqa: PLR0913, PLR0917 - one value per input
     search: RecipeSearchPort,
     llm: LlmGateway,
     started_s: float,
+    on_step: StepCallback | None,
 ) -> DraftOutcome:
     """Draft from a recipe result; hop once more on a named gap.
 
@@ -87,9 +114,15 @@ def _draft_with_safety_net(  # noqa: PLR0913, PLR0917 - one value per input
         LlmUnavailableError: the LLM could not give a valid draft.
     """
     prompt_hits = result.hits[:MAX_PROMPT_CHUNKS]
+    emit_step(
+        on_step,
+        PipelineStep.DRAFT,
+        DRAFT_DETAIL.format(number=FIRST_DRAFT_NUMBER),
+    )
     drafted = draft(question, prompt_hits, llm, note=result.note)
     if not needs_follow_up(drafted):
         return DraftOutcome(drafted, prompt_hits, result.note, plan)
+    emit_step(on_step, PipelineStep.HOP, drafted.missing)
     policy = replace(HopPolicy.safety_net(), started_s=started_s)
     hopped = run_hops(
         question,
