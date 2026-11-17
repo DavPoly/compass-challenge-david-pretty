@@ -4,7 +4,7 @@ import re
 
 from archive.common.chunk_model import Chunk, ChunkKind
 from archive.common.text.text_normalize_utils import join_pages
-from archive.ingest.ingest_constants import (
+from archive.ingest.chunking_constants import (
     CHUNK_ID_SEPARATOR,
     CHUNK_OVERLAP_TOKENS,
     CHUNK_PARAGRAPH_SNAP_TOKENS,
@@ -13,8 +13,8 @@ from archive.ingest.ingest_constants import (
     PARAGRAPH_BREAK,
     WORD_PATTERN,
 )
-from archive.ingest.metadata_service import DocMetadata
-from archive.ingest.pdf_parse_gateway import ParsedDoc
+from archive.ingest.metadata.metadata_service import DocMetadata
+from archive.ingest.parse.pdf_parse_gateway import ParsedDoc
 
 _WORD = re.compile(WORD_PATTERN)
 
@@ -50,6 +50,9 @@ def chunk_document(doc: ParsedDoc, metadata: DocMetadata) -> list[Chunk]:
             doc_date=metadata.doc_date,
             identifiers=list(metadata.identifiers),
             lang=metadata.lang,
+            version=metadata.version,
+            effective_from=metadata.effective_from,
+            series=metadata.series,
             text=text[words[start].start() : words[end - 1].end()],
         )
         for index, (start, end) in enumerate(bounds)

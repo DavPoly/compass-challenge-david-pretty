@@ -12,6 +12,23 @@ class ChunkKind(StrEnum):
     TABLE = "table"
 
 
+class DocType(StrEnum):
+    """Document family; `Chunk.doc_type` holds one of these values."""
+
+    INVOICE = "invoice"
+    CONTRACT = "contract"
+    MONTHLY_REPORT = "monthly_report"
+    MINUTES = "minutes"
+    EMAIL = "email"
+    NEWSLETTER = "newsletter"
+    MEMO = "memo"
+    POLICY = "policy"
+    DIRECTORY = "directory"
+    TECHNICAL_NOTE = "technical_note"
+    PROJECT_SHEET = "project_sheet"
+    UNKNOWN = "unknown"
+
+
 class Chunk(BaseModel):
     """A retrievable piece of a document with its metadata."""
 
@@ -26,3 +43,4 @@ class Chunk(BaseModel):
     version: str | None = None
     effective_from: str | None = None
     effective_to: str | None = None
+    series: str | None = None

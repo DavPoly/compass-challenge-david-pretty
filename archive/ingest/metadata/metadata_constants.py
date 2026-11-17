@@ -1,19 +1,9 @@
-"""Constants of the ingest package: chunking, metadata and index build."""
+"""Constants of the metadata service: identifiers and language."""
 
 import re
 
 from archive.common.constants import STOPWORDS_EN, STOPWORDS_FR
 
-CHUNK_SINGLE_MAX_TOKENS = 800
-CHUNK_TARGET_TOKENS = 400
-CHUNK_OVERLAP_TOKENS = 50
-CHUNK_PARAGRAPH_SNAP_TOKENS = 60
-CHUNK_ID_SEPARATOR = "#"
-PARAGRAPH_BREAK = "\n\n"
-# Tokens are approximated by whitespace-separated words.
-WORD_PATTERN = r"\S+"
-
-DOC_TYPE_UNKNOWN = "unknown"
 LANG_FR = "fr"
 LANG_EN = "en"
 LANG_WORD_PATTERN = r"[a-z]+"
@@ -33,9 +23,3 @@ IDENTIFIER_PATTERN = (
 )
 IDENTIFIER_SERIAL_DIGITS = {"F": 4, "C": 2, "BRV": 2}
 EMAIL_PATTERN = r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+"
-
-MANIFEST_FILE_NAME = "manifest.json"
-MANIFEST_INDENT = 1
-BUILD_FLUSH_CHUNKS = 512
-BUILD_MAP_CHUNKSIZE = 8
-FILE_HASH_BLOCK_BYTES = 1 << 20

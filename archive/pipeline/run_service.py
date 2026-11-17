@@ -12,7 +12,7 @@ from typing import TextIO
 from archive.agent.draft_service import draft
 from archive.common.config import AppConfig
 from archive.common.constants import PDF_GLOB
-from archive.ingest.index_builder_service import ManifestError
+from archive.ingest.build.manifest_gateway import ManifestError
 from archive.llm.llm_gateway import LlmGateway, LlmUnavailableError
 from archive.pipeline.pipeline_constants import (
     ANSWERS_ENCODING,

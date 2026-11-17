@@ -14,7 +14,7 @@ from archive.common.constants import (  # noqa: E402
     PDF_GLOB,
     REPO_ROOT,
 )
-from archive.ingest.index_builder_service import build  # noqa: E402
+from archive.ingest.build.index_builder_service import build  # noqa: E402
 from archive.pipeline.pipeline_constants import (  # noqa: E402
     EXIT_ERROR,
     EXIT_OK,

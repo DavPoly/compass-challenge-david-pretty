@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from archive.common.config import AppConfig
-from archive.ingest.index_builder_service import build
+from archive.ingest.build.index_builder_service import build
 from archive.llm.llm_gateway import LlmUnavailableError, Messages
 from archive.pipeline import run_service
 from archive.pipeline.pipeline_constants import (

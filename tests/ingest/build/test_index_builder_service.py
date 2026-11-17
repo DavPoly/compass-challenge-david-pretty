@@ -5,13 +5,15 @@ from typing import Any
 
 import pytest
 
-from archive.ingest import index_builder_service
-from archive.ingest.index_builder_service import (
+from archive.ingest.build import index_builder_service
+from archive.ingest.build.index_builder_service import (
     IndexBuildError,
-    ManifestError,
     _clear_previous_index,
     _parse_file,
     build,
+)
+from archive.ingest.build.manifest_gateway import (
+    ManifestError,
     load_manifest,
 )
 from archive.retrieval.search_service import SearchFilters, SearchService

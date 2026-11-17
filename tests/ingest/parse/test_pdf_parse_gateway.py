@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from archive.ingest.pdf_parse_gateway import PdfParseError, parse_pdf
+from archive.ingest.parse.pdf_parse_gateway import PdfParseError, parse_pdf
 
 
 def test_parse_real_pdf(kit_corpus_dir: Path) -> None:

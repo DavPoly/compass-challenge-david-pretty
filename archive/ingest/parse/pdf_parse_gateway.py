@@ -12,10 +12,11 @@ class PdfParseError(Exception):
 
 @dataclass(frozen=True)
 class ParsedDoc:
-    """Text of a PDF, one string per page."""
+    """Text of a PDF, one string per page, and its table count."""
 
     doc_id: str
     pages: list[str]
+    table_count: int = 0
 
 
 def parse_pdf(path: Path) -> ParsedDoc:
