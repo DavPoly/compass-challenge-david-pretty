@@ -6,22 +6,19 @@ import re
 from archive.agent.route.route_constants import (
     ISO_DATE_PATTERN,
     MSG_PLAN_FALLBACK,
-    QUESTION_CLOSE,
-    QUESTION_OPEN,
-    QUESTION_TAG_ESCAPE,
-    QUESTION_TAG_PATTERN,
     SYSTEM_PROMPT,
     USER_PROMPT,
 )
 from archive.agent.route.route_model import QuestionFamily, QuestionPlan
+from archive.common.constants import QUESTION_TAG
 from archive.common.text.date_parsing_utils import build_iso_date
+from archive.common.text.prompt_delimit_utils import wrap_untrusted
 from archive.llm.llm_gateway import LlmGateway, LlmUnavailableError, Messages
 from archive.retrieval.search_service import find_identifiers
 from archive.validation.input_model import Question
 
 logger = logging.getLogger(__name__)
 
-_QUESTION_TAG = re.compile(QUESTION_TAG_PATTERN, re.IGNORECASE)
 _ISO_DATE = re.compile(ISO_DATE_PATTERN)
 
 
@@ -30,9 +27,8 @@ def build_messages(question: Question) -> Messages:
 
     The question text is delimited as untrusted data.
     """
-    text = _QUESTION_TAG.sub(QUESTION_TAG_ESCAPE, question.question)
     user = USER_PROMPT.format(
-        open=QUESTION_OPEN, question=text, close=QUESTION_CLOSE
+        question=wrap_untrusted(QUESTION_TAG, question.question)
     )
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
