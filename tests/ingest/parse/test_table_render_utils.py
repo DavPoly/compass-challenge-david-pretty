@@ -12,7 +12,7 @@ def test_none_cell_is_empty() -> None:
 
 def test_multiline_cell_becomes_one_line() -> None:
     assert clean_cell(" Line one\nline two \r\n three ") == (
-        "Line one line two  three"
+        "Line one line two three"
     )
 
 
