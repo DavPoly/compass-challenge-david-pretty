@@ -10,10 +10,12 @@ from typing import Protocol
 
 from pydantic import ValidationError
 
+from archive.common.constants import PDF_SUFFIX
 from archive.pipeline.pipeline_constants import TRACE_SUFFIX
 from archive.pipeline.trace_gateway import trace_filename
 from archive.pipeline.trace_model import QuestionTrace, RetrievedChunk
 from archive.validation.answer_model import Evidence
+from archive.validation.answer_validator import normalize_doc_id
 from archive.viewer.viewer_constants import (
     ACCURACY_DECIMALS,
     CONFIDENCE_LABELS,
@@ -23,6 +25,7 @@ from archive.viewer.viewer_constants import (
     INDEX_FILENAME,
     ISSUE_SEPARATOR,
     LOG_BUDGET_EXHAUSTED,
+    LOG_DOC_OUTSIDE_CORPUS,
     LOG_RENDER_FAILED,
     LOG_SCORES_UNUSABLE,
     LOG_TRACE_SKIPPED,
@@ -329,7 +332,10 @@ def _try_render(
     if not request.budget.has_time():
         logger.info(LOG_BUDGET_EXHAUSTED)
         return None
-    pdf_path = request.corpus_dir / f"{evidence.doc_id}.pdf"
+    pdf_path = _corpus_pdf(request.corpus_dir, evidence.doc_id)
+    if pdf_path is None:
+        logger.warning(LOG_DOC_OUTSIDE_CORPUS, evidence.doc_id)
+        return None
     try:
         return request.render(pdf_path, evidence, is_verified, out_stem)
     except (
@@ -339,6 +345,14 @@ def _try_render(
             LOG_RENDER_FAILED, evidence.doc_id, out_stem.name, exc_info=True
         )
         return None
+
+
+def _corpus_pdf(corpus_dir: Path, doc_id: str) -> Path | None:
+    """PDF of a cited doc id, or None when it escapes the corpus."""
+    name = f"{normalize_doc_id(doc_id)}{PDF_SUFFIX}"
+    root = corpus_dir.resolve()
+    pdf_path = (root / name).resolve()
+    return pdf_path if pdf_path.is_relative_to(root) else None
 
 
 def _relative(path: Path | None, request: ViewerRequest) -> str | None:

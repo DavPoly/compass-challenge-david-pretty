@@ -165,6 +165,40 @@ def test_happy_path_inlines_parseable_json(tmp_path: Path) -> None:
     assert renderer.calls[0][0] == tmp_path / "corpus" / "d1.pdf"
 
 
+def test_doc_id_with_pdf_suffix_renders_that_corpus_file(
+    tmp_path: Path,
+) -> None:
+    trace = make_trace("q1", ["x"])
+    assert trace.draft is not None
+    trace.draft.evidence[0] = Evidence(doc_id="doc_0001.pdf", quote="x")
+    write_trace(tmp_path / "traces", trace)
+    renderer = FakeRenderer()
+
+    build(tmp_path, renderer)
+
+    expected = (tmp_path / "corpus").resolve() / "doc_0001.pdf"
+    assert renderer.calls[0][0] == expected
+
+
+@pytest.mark.parametrize(
+    "doc_id", ["../../x", "..\\..\\x", "/etc/passwd", "C:/Windows/x"]
+)
+def test_doc_id_outside_corpus_is_not_rendered(
+    tmp_path: Path, doc_id: str
+) -> None:
+    trace = make_trace("q1", ["x"])
+    assert trace.draft is not None
+    trace.draft.evidence[0] = Evidence(doc_id=doc_id, quote="x")
+    write_trace(tmp_path / "traces", trace)
+    renderer = FakeRenderer()
+
+    data = build(tmp_path, renderer)
+
+    assert renderer.calls == []
+    evidence = data["questions"][0]["evidence"][0]  # type: ignore[index]
+    assert evidence["state"] == "not_rendered"
+
+
 def test_unverified_and_not_located_states(tmp_path: Path) -> None:
     trace = make_trace("q1", ["bad", "ok"], unverified=["bad"])
     write_trace(tmp_path / "traces", trace)

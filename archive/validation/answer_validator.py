@@ -9,6 +9,7 @@ from decimal import Decimal, InvalidOperation, localcontext
 
 from pydantic import BaseModel
 
+from archive.common.constants import PDF_SUFFIX
 from archive.common.text.date_parsing_constants import (
     AMBIGUOUS_DAY_MONTH_LIMIT,
     DAY_FIRST_DATE_RE,
@@ -40,7 +41,6 @@ from archive.validation.validation_constants import (
     MAX_DECIMAL_DIGITS,
     MIN_CONFLICT_CITATIONS,
     NOT_FOUND_ANSWER,
-    PDF_SUFFIX,
     SEPARATOR_RE,
     THOUSANDS_GROUP_DIGITS,
 )

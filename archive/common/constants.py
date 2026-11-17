@@ -38,7 +38,8 @@ STOPWORDS_EN = frozenset(
 STOPWORDS = STOPWORDS_FR | STOPWORDS_EN
 
 # Corpus and pipeline share this glob.
-PDF_GLOB = "*.pdf"
+PDF_SUFFIX = ".pdf"
+PDF_GLOB = f"*{PDF_SUFFIX}"
 
 # Untrusted text delimited inside LLM prompts.
 QUESTION_TAG = "question"
