@@ -76,14 +76,15 @@ def retrieve(question: str, search: SearchPort, k: int) -> list[SearchHit]:
         typed_slots = math.ceil(k * RETRIEVE_TYPED_SHARE)
         filters = SearchFilters(doc_types=[hint.value for hint in hints])
         typed = search.hybrid_search(question, filters, typed_slots)
-    merged = _dedupe(typed[:k])
+    merged = dedupe_hits(typed[:k])
     if len(merged) >= k:
         return merged
     rest = search.hybrid_search(question, None, k)
-    return _dedupe([*merged, *rest])[:k]
+    return dedupe_hits([*merged, *rest])[:k]
 
 
-def _dedupe(hits: list[SearchHit]) -> list[SearchHit]:
+def dedupe_hits(hits: list[SearchHit]) -> list[SearchHit]:
+    """Drop repeated chunk ids, keeping the first hit of each."""
     seen: set[str] = set()
     unique: list[SearchHit] = []
     for hit in hits:

@@ -5,11 +5,16 @@ import pytest
 from archive.agent.hops import hop_service
 from archive.agent.hops.hop_constants import (
     HOP_LOG_MISSING_MAX_CHARS,
+    HOP_NEW_HITS_MAX,
+    MIN_ORIGINAL_SLOTS,
     MISSING_QUERY_MAX_CHARS,
 )
 from archive.agent.hops.hop_model import HopPolicy
 from archive.agent.hops.hop_service import run_hops
-from archive.agent.prompt_constants import MAX_PROMPT_CHUNKS
+from archive.agent.prompt_constants import (
+    MAX_PROMPT_CHUNKS,
+    NO_DOCUMENTS_MISSING,
+)
 from archive.agent.recipes.recipe_model import RecipeResult
 from archive.common.chunk_model import Chunk, ChunkKind
 from archive.llm.llm_gateway import LlmGateway, Messages
@@ -175,7 +180,7 @@ def test_blank_missing_stops_the_loop() -> None:
     assert search.queries == []
 
 
-def test_not_found_with_missing_follows_up_despite_sufficient() -> None:
+def test_not_found_despite_sufficient_does_not_follow_up() -> None:
     lead = ANSWER.model_copy(
         update={
             "status": AnswerStatus.NOT_FOUND,
@@ -183,14 +188,49 @@ def test_not_found_with_missing_follows_up_despite_sufficient() -> None:
             "missing": "email of Lea Frechette",
         }
     )
-    llm = FakeLlm(lead, ANSWER)
+    llm = FakeLlm(lead)
+    search = FakeSearch(plain=[_hit("doc_b")])
 
-    result = _run(
-        llm, FakeSearch(plain=[_hit("doc_b")]), HopPolicy.multi_hop()
+    _run(llm, search, HopPolicy.multi_hop())
+
+    assert len(llm.calls) == 1
+    assert search.queries == []
+
+
+def test_sentinel_missing_never_follows_up() -> None:
+    llm = FakeLlm(_gap(f"  {NO_DOCUMENTS_MISSING} "))
+    search = FakeSearch(plain=[_hit("doc_b")])
+
+    _run(llm, search, HopPolicy.multi_hop())
+
+    assert len(llm.calls) == 1
+    assert search.queries == []
+
+
+def test_no_original_hits_never_follows_up() -> None:
+    llm = FakeLlm(_gap())
+    search = FakeSearch(plain=[_hit("doc_b")])
+
+    _run(llm, search, HopPolicy.multi_hop(), hits=[])
+
+    assert search.queries == []
+
+
+def test_note_reaches_every_draft() -> None:
+    llm = FakeLlm(_gap(), ANSWER)
+    gateway: LlmGateway = llm  # type: ignore[assignment]
+
+    run_hops(
+        QUESTION,
+        [_hit("doc_a")],
+        FakeSearch(plain=[_hit("doc_b")]),
+        gateway,
+        HopPolicy.multi_hop(),
+        note="use the newest",
     )
 
     assert len(llm.calls) == 2
-    assert result.draft == ANSWER
+    assert all("use the newest" in llm.user_prompt(n) for n in range(2))
 
 
 def test_answered_sufficient_with_missing_does_not_follow_up() -> None:
@@ -317,6 +357,21 @@ def test_time_budget_blocks_a_new_draft() -> None:
     assert result.draft == _gap()
 
 
+def test_budget_runs_from_the_policy_start() -> None:
+    llm = FakeLlm(_gap(), ANSWER)
+    policy = HopPolicy(
+        max_drafts=3,
+        expand_upfront=False,
+        time_budget_s=10.0,
+        clock=FakeClock(15.0, 15.0),
+        started_s=0.0,
+    )
+
+    _run(llm, FakeSearch(plain=[_hit("doc_b")]), policy)
+
+    assert len(llm.calls) == 1
+
+
 def test_upfront_expansion_runs_once_before_first_draft(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -399,3 +454,95 @@ def test_no_targeted_hits_keeps_original_order() -> None:
     )
 
     assert _doc_ids(result) == ["doc_a", "doc_b", "doc_c"]
+
+
+def test_many_targeted_hits_keep_originals_and_earlier_hops() -> None:
+    first = [_hit(f"doc_t{n:02d}") for n in range(HOP_NEW_HITS_MAX + 4)]
+    second = [_hit(f"doc_u{n:02d}") for n in range(HOP_NEW_HITS_MAX + 4)]
+
+    class TwoHopSearch(FakeSearch):
+        def hybrid_search(
+            self, query: str, filters: SearchFilters | None, k: int
+        ) -> list[SearchHit]:
+            self.queries.append((query, filters, k))
+            return (
+                []
+                if filters
+                else (first, second)[(len(self.queries) - 1) // 2]
+            )
+
+    originals = [_hit(f"doc_o{n:02d}") for n in range(MAX_PROMPT_CHUNKS)]
+    llm = FakeLlm(_gap(), _gap("again"), ANSWER)
+
+    _run(llm, TwoHopSearch(), HopPolicy.multi_hop(), hits=originals)
+
+    last = llm.user_prompt(2)
+    assert last.count("<document ") == MAX_PROMPT_CHUNKS
+    assert "doc_o00" in last
+    assert last.count("doc_o") >= MIN_ORIGINAL_SLOTS
+    assert "doc_u00" in last and "doc_t00" in last
+    assert last.index("doc_u00") < last.index("doc_t00")
+    assert f"doc_t{HOP_NEW_HITS_MAX:02d}" not in last
+
+
+def test_targeted_but_unprompted_hit_is_not_new(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    targeted = [_hit(f"doc_t{n:02d}") for n in range(MAX_PROMPT_CHUNKS)]
+    _patch_expand(monkeypatch, targeted)
+    llm = FakeLlm(_gap())
+    cut_off = targeted[-1]
+
+    result = _run(llm, FakeSearch(plain=[cut_off]), HopPolicy.multi_hop())
+
+    assert "doc_t15" not in llm.user_prompt(0)
+    assert len(llm.calls) == 1
+    assert cut_off not in result.hits
+
+
+def _not_found(missing: str | None = None) -> DraftAnswer:
+    return ANSWER.model_copy(
+        update={
+            "status": AnswerStatus.NOT_FOUND,
+            "evidence_sufficient": False,
+            "missing": missing,
+        }
+    )
+
+
+def test_final_not_found_keeps_an_earlier_answered_draft() -> None:
+    partial = _gap().model_copy(update={"answer": "partial"})
+    llm = FakeLlm(partial, _not_found())
+
+    result = _run(
+        llm, FakeSearch(plain=[_hit("doc_b")]), HopPolicy.multi_hop()
+    )
+
+    assert len(llm.calls) == 2
+    assert result.draft == partial
+    assert _doc_ids(result) == ["doc_a", "doc_b"]
+
+
+def test_final_not_found_keeps_the_seeded_answered_draft() -> None:
+    seeded = _gap().model_copy(update={"answer": "seeded"})
+    llm = FakeLlm(_not_found())
+
+    result = _run(
+        llm,
+        FakeSearch(plain=[_hit("doc_b")]),
+        HopPolicy.safety_net(),
+        first_draft=seeded,
+    )
+
+    assert result.draft == seeded
+
+
+def test_not_found_without_earlier_answer_is_returned() -> None:
+    lead = _not_found("email of Xavier")
+    llm = FakeLlm(lead, _not_found())
+
+    result = _run(
+        llm, FakeSearch(plain=[_hit("doc_b")]), HopPolicy.multi_hop()
+    )
+
+    assert result.draft == _not_found()

@@ -1,17 +1,15 @@
 """Follow identifier links from hits to related documents."""
 
-from collections import Counter
-
+from archive.agent.hops.code_utils import non_email_codes
 from archive.agent.hops.hop_constants import (
-    EMAIL_MARKER,
     EXPAND_CAP,
+    EXPAND_DOC_TYPES,
     EXPAND_MAX_CODES,
     EXPAND_PER_CODE_CAP,
     EXPAND_SHARED_MIN_HITS,
     EXPAND_SOURCE_HITS,
 )
 from archive.agent.recipes.recipe_model import RecipeSearchPort
-from archive.common.chunk_model import DocType
 from archive.retrieval.search_service import (
     SearchFilters,
     SearchHit,
@@ -49,10 +47,7 @@ def expand_by_identifiers(
     for code in _collect_codes(question, hits):
         filters = SearchFilters(
             identifiers=[code],
-            doc_types=[
-                DocType.PROJECT_SHEET.value,
-                DocType.CONTRACT.value,
-            ],
+            doc_types=list(EXPAND_DOC_TYPES),
         )
         for hit in search.list_by_filter(filters, EXPAND_PER_CODE_CAP):
             if hit.chunk.chunk_id not in seen:
@@ -70,8 +65,7 @@ def _collect_codes(question: Question, hits: list[SearchHit]) -> list[str]:
     for hit in hits[:EXPAND_SOURCE_HITS]:
         codes.extend(hit.chunk.identifiers)
     unique = dict.fromkeys(codes)
-    kept = [code for code in unique if EMAIL_MARKER not in code]
-    return kept[:EXPAND_MAX_CODES]
+    return non_email_codes(unique)[:EXPAND_MAX_CODES]
 
 
 def _shared_codes(hits: list[SearchHit]) -> list[str]:
@@ -80,7 +74,7 @@ def _shared_codes(hits: list[SearchHit]) -> list[str]:
     for hit in hits:
         for code in hit.chunk.identifiers:
             docs_by_code.setdefault(code, set()).add(hit.chunk.doc_id)
-    counts = Counter({c: len(d) for c, d in docs_by_code.items()})
+    counts = {code: len(docs) for code, docs in docs_by_code.items()}
     shared = [
         code
         for code, count in counts.items()
