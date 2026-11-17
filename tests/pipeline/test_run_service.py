@@ -4,6 +4,7 @@ import re
 import shutil
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -435,7 +436,7 @@ def test_deadline_clock_starts_before_index_loading(
     real_open = SearchService.open
     load_cost_s = GLOBAL_DEADLINE_S - QUESTION_BUDGET_S / 2
 
-    def slow_open(index_dir: Path) -> SearchService:
+    def slow_open(index_dir: Path, *models: object) -> SearchService:
         fake.now_s += load_cost_s
         return real_open(index_dir)
 
@@ -530,3 +531,108 @@ def test_late_write_to_a_closed_answers_file_is_discarded(
         )
 
     assert "late result discarded" in caplog.text
+
+
+class FakeModel:
+    """Stands in for both ports; only identity matters here."""
+
+    dim = 8
+
+
+def install_loaders(
+    monkeypatch: pytest.MonkeyPatch,
+    embedder: object | None,
+    reranker: object | None,
+    on_load: Callable[[], None] | None = None,
+) -> None:
+    def load(model: object | None) -> Callable[[float], object | None]:
+        def loader(timeout_s: float) -> object | None:
+            if on_load:
+                on_load()
+            return model
+
+        return loader
+
+    monkeypatch.setattr(run_service, "load_embedder", load(embedder))
+    monkeypatch.setattr(run_service, "load_reranker", load(reranker))
+
+
+def test_models_are_passed_to_sync_and_search(
+    indexed: tuple[AppConfig, str],
+    fake_llm: FakeLlm,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    embedder, reranker = FakeModel(), FakeModel()
+    install_loaders(monkeypatch, embedder, reranker)
+    seen: dict[str, object] = {}
+    real_open = SearchService.open
+    real_sync = run_service.sync_index
+
+    def spy_open(
+        index_dir: Path, embedder: object = None, reranker: object = None
+    ) -> SearchService:
+        seen["search"] = (embedder, reranker)
+        return real_open(index_dir)
+
+    def spy_sync(*args: object, **kwargs: object) -> object:
+        seen["sync"] = kwargs["embedder"]
+        return real_sync(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(SearchService, "open", staticmethod(spy_open))
+    monkeypatch.setattr(run_service, "sync_index", spy_sync)
+    config, query = indexed
+    questions = write_questions(
+        tmp_path / "q.jsonl", [{"id": "q", "question": query}]
+    )
+
+    code = run_service.run(questions, tmp_path / "a.jsonl", config)
+
+    assert code == EXIT_OK
+    assert seen["search"] == (embedder, reranker)
+    assert seen["sync"] is embedder
+
+
+def test_missing_embedder_warns_and_still_answers(
+    indexed: tuple[AppConfig, str],
+    fake_llm: FakeLlm,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+) -> None:
+    config, query = indexed
+    questions = write_questions(
+        tmp_path / "q.jsonl", [{"id": "q", "question": query}]
+    )
+    answers = tmp_path / "a.jsonl"
+
+    code = run_service.run(questions, answers, config)
+
+    assert code == EXIT_OK
+    assert read_answers(answers)["q"]["status"] == "answered"
+    assert caplog.text.count("dense model unavailable") == 1
+
+
+def test_model_loading_counts_against_the_global_deadline(
+    indexed: tuple[AppConfig, str],
+    fake_llm: FakeLlm,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fake = FakeClock()
+    install_loaders(
+        monkeypatch,
+        None,
+        None,
+        on_load=lambda: setattr(fake, "now_s", GLOBAL_DEADLINE_S),
+    )
+    config, query = indexed
+    questions = write_questions(
+        tmp_path / "q.jsonl", [{"id": "q", "question": query}]
+    )
+    answers = tmp_path / "a.jsonl"
+
+    code = run_service.run(questions, answers, config, fake.clock, fake.sleep)
+
+    assert code == EXIT_OK
+    assert read_answers(answers)["q"]["status"] == "not_found"
+    assert fake_llm.call_count == 0

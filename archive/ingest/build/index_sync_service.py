@@ -2,20 +2,26 @@
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 from archive.common.chunk_model import Chunk
 from archive.common.constants import PDF_GLOB
 from archive.ingest.build.build_constants import (
+    LOG_DENSE_BUDGET_SPENT,
+    LOG_DENSE_FAILED,
+    LOG_DENSE_INDEX_SPARSE,
     LOG_SYNC_DONE,
     LOG_SYNC_FULL_BUILD,
     LOG_SYNC_SKIPPED,
     REASON_NO_COLLECTION,
     REASON_NO_STORAGE,
+    SYNC_DENSE_BUDGET_S,
 )
 from archive.ingest.build.index_builder_service import (
     build,
+    embed_batches,
     parse_all,
 )
 from archive.ingest.build.manifest_gateway import (
@@ -26,10 +32,12 @@ from archive.ingest.build.manifest_gateway import (
     write_manifest,
 )
 from archive.ingest.build.version_series_utils import with_effective_to
+from archive.retrieval.models.embedding_gateway import EmbeddingPort
 from archive.retrieval.qdrant.qdrant_constants import QDRANT_SUBDIR
 from archive.retrieval.qdrant.qdrant_gateway import QdrantGateway
 
 logger = logging.getLogger(__name__)
+_monotonic: Callable[[], float] = time.monotonic
 
 
 @dataclass(frozen=True)
@@ -46,6 +54,36 @@ class SyncReport:
     removed: list[str]
     failed: list[str]
     seconds: float
+    sparse_only: int = 0
+
+
+class _DenseSession:
+    """Embeds chunks within the sync budget; counts the overflow."""
+
+    def __init__(self, embedder: EmbeddingPort) -> None:
+        self._embedder = embedder
+        self._started = _monotonic()
+        self._stop: tuple[str, object] | None = None
+        self.sparse_only = 0
+
+    def vectors(self, chunks: list[Chunk]) -> list[list[float] | None]:
+        """One vector per chunk; None once the budget or embedder fails."""
+        vectors: list[list[float] | None] = []
+        batches = embed_batches(self._embedder, chunks)
+        while self._stop is None and len(vectors) < len(chunks):
+            if _monotonic() - self._started >= SYNC_DENSE_BUDGET_S:
+                self._stop = (LOG_DENSE_BUDGET_SPENT, SYNC_DENSE_BUDGET_S)
+                break
+            try:
+                vectors.extend(next(batches))
+            except Exception as error:  # never fail a sync on embedding
+                self._stop = (LOG_DENSE_FAILED, error)
+        missing = len(chunks) - len(vectors)
+        if missing and self._stop is not None:
+            logger.warning(self._stop[0], self._stop[1], missing)
+        vectors.extend([None] * missing)
+        self.sparse_only += missing
+        return vectors
 
 
 @dataclass(frozen=True)
@@ -61,7 +99,10 @@ class _Diff:
 
 
 def sync_index(
-    corpus_dir: Path, index_dir: Path, workers: int | None = None
+    corpus_dir: Path,
+    index_dir: Path,
+    workers: int | None = None,
+    embedder: EmbeddingPort | None = None,
 ) -> SyncReport:
     """Update the index so it matches the PDFs of `corpus_dir`.
 
@@ -74,13 +115,20 @@ def sync_index(
     sync retries it. Without a usable manifest or collection, a full
     `build` runs instead.
 
+    New and changed chunks get a dense vector only when `embedder` is
+    set and the collection has the dense vector, until
+    SYNC_DENSE_BUDGET_S is spent; the rest are upserted sparse-only
+    and counted. An embedder error never fails the sync.
+
     Args:
         corpus_dir: Directory of `*.pdf` files.
         index_dir: Index directory (`qdrant/` and `manifest.json`).
         workers: Worker processes; None lets the executor decide.
+        embedder: Dense embedder, or None for a sparse-only sync.
 
     Returns:
-        Doc ids per outcome and the duration.
+        Doc ids per outcome, the sparse-only chunk count and the
+        duration.
 
     Raises:
         IndexBuildError: if a full build cannot clear the old index.
@@ -91,27 +139,30 @@ def sync_index(
     paths = {path.stem: path for path in corpus_dir.glob(PDF_GLOB)}
     manifest = _usable_manifest(index_dir)
     if manifest is None:
-        return _full_build(corpus_dir, index_dir, workers, started)
+        return _full_build(corpus_dir, index_dir, (workers, embedder), started)
     diff = _diff(manifest, paths)
     if diff.is_empty:
         return SyncReport([], [], [], [], time.monotonic() - started)
     gateway = _open_collection(index_dir)
     if gateway is None:
-        return _full_build(corpus_dir, index_dir, workers, started)
+        return _full_build(corpus_dir, index_dir, (workers, embedder), started)
     try:
+        dense = _dense_session(gateway, embedder)
         stale = [*diff.added, *diff.changed, *diff.removed]
-        _drop_stale(gateway, index_dir, stale, manifest)
+        _drop_stale(gateway, index_dir, stale, manifest, dense)
         todo = [paths[doc_id] for doc_id in [*diff.added, *diff.changed]]
-        failed = _ingest(gateway, todo, manifest, workers)
+        failed = _ingest(gateway, todo, manifest, (workers, dense))
     finally:
         gateway.close()
     write_manifest(index_dir, manifest)
+    sparse_only = dense.sparse_only if dense else 0
     logger.info(
         LOG_SYNC_DONE,
         len(diff.added),
         len(diff.changed),
         len(diff.removed),
         len(failed),
+        sparse_only,
     )
     return SyncReport(
         diff.added,
@@ -119,6 +170,7 @@ def sync_index(
         diff.removed,
         failed,
         time.monotonic() - started,
+        sparse_only,
     )
 
 
@@ -144,13 +196,25 @@ def _open_collection(index_dir: Path) -> QdrantGateway | None:
     return None
 
 
+def _dense_session(
+    gateway: QdrantGateway, embedder: EmbeddingPort | None
+) -> _DenseSession | None:
+    if embedder is None:
+        return None
+    if not gateway.has_dense():
+        logger.info(LOG_DENSE_INDEX_SPARSE)
+        return None
+    return _DenseSession(embedder)
+
+
 def _full_build(
     corpus_dir: Path,
     index_dir: Path,
-    workers: int | None,
+    options: tuple[int | None, EmbeddingPort | None],
     started: float,
 ) -> SyncReport:
-    report = build(corpus_dir, index_dir, workers)
+    workers, embedder = options
+    report = build(corpus_dir, index_dir, workers, embedder)
     added = sorted(load_manifest(index_dir))
     return SyncReport(
         added, [], [], report.failed_docs, time.monotonic() - started
@@ -179,6 +243,7 @@ def _drop_stale(
     index_dir: Path,
     stale: list[str],
     manifest: dict[str, ManifestEntry],
+    dense: _DenseSession | None = None,
 ) -> None:
     """Delete docs from the collection and `manifest`, then save it.
 
@@ -192,7 +257,7 @@ def _drop_stale(
     gateway.delete_docs(stale)
     for doc_id in stale:
         manifest.pop(doc_id, None)
-    _refresh_series(gateway)
+    _refresh_series(gateway, dense)
     write_manifest(index_dir, manifest)
 
 
@@ -200,9 +265,13 @@ def _ingest(
     gateway: QdrantGateway,
     todo: list[Path],
     manifest: dict[str, ManifestEntry],
-    workers: int | None,
+    options: tuple[int | None, _DenseSession | None],
 ) -> list[str]:
-    """Parse and upsert PDFs, add them to `manifest`; return failures."""
+    """Parse and upsert PDFs, add them to `manifest`; return failures.
+
+    `options` is the worker count and the dense session, if any.
+    """
+    workers, dense = options
     failed: list[str] = []
     new_chunks: list[Chunk] = []
     for parsed in parse_all(todo, workers):
@@ -212,19 +281,33 @@ def _ingest(
             continue
         manifest[parsed.doc_id] = parsed.entry
         new_chunks.extend(parsed.chunks)
-    gateway.upsert(new_chunks)
-    _refresh_series(gateway)
+    _upsert(gateway, new_chunks, dense)
+    _refresh_series(gateway, dense)
     return failed
 
 
-def _refresh_series(gateway: QdrantGateway) -> None:
-    """Recompute `effective_to` over the whole collection's series."""
+def _upsert(
+    gateway: QdrantGateway,
+    chunks: list[Chunk],
+    dense: _DenseSession | None,
+) -> None:
+    gateway.upsert(chunks, dense.vectors(chunks) if dense else None)
+
+
+def _refresh_series(
+    gateway: QdrantGateway, dense: _DenseSession | None = None
+) -> None:
+    """Recompute `effective_to` over the whole collection's series.
+
+    The upsert replaces whole points, so the changed chunks are
+    re-embedded when a dense session is active; otherwise they
+    become sparse-only.
+    """
     stored = gateway.scroll_series()
     updated = with_effective_to(stored)
-    gateway.upsert(
-        [
-            new
-            for old, new in zip(stored, updated, strict=True)
-            if old.effective_to != new.effective_to
-        ]
-    )
+    changed = [
+        new
+        for old, new in zip(stored, updated, strict=True)
+        if old.effective_to != new.effective_to
+    ]
+    _upsert(gateway, changed, dense)
