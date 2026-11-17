@@ -2,7 +2,7 @@
 
 import threading
 import warnings
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from pathlib import Path
 
 from qdrant_client import QdrantClient, models
@@ -11,9 +11,12 @@ from archive.common.chunk_model import Chunk
 from archive.retrieval.qdrant_constants import (
     BUILD_HINT,
     COLLECTION_NAME,
+    FIELD_DOC_ID,
     KEYWORD_PAYLOAD_FIELDS,
     OPEN_FAILURE_HINT,
+    FIELD_SERIES,
     QDRANT_SUBDIR,
+    SERIES_SCROLL_CAP,
     SCROLL_PAGE_SIZE,
     SPARSE_VECTOR_NAME,
     UPSERT_BATCH_SIZE,
@@ -109,6 +112,25 @@ class QdrantGateway:
                     points=[self._to_point(chunk) for chunk in batch],
                 )
 
+    def delete_docs(self, doc_ids: Collection[str]) -> None:
+        """Delete every chunk of the given documents; no-op if empty."""
+        if not doc_ids:
+            return
+        with self._write_lock:
+            self._client.delete(
+                COLLECTION_NAME,
+                points_selector=models.FilterSelector(
+                    filter=models.Filter(
+                        must=[
+                            models.FieldCondition(
+                                key=FIELD_DOC_ID,
+                                match=models.MatchAny(any=list(doc_ids)),
+                            )
+                        ]
+                    )
+                ),
+            )
+
     def query_sparse(
         self,
         vector: models.SparseVector,
@@ -147,6 +169,17 @@ class QdrantGateway:
             if not points or offset is None:
                 break
         return chunks
+
+    def scroll_series(self) -> list[Chunk]:
+        """Return every chunk that belongs to a version series."""
+        has_series = models.Filter(
+            must_not=[
+                models.IsNullCondition(
+                    is_null=models.PayloadField(key=FIELD_SERIES)
+                )
+            ]
+        )
+        return self.scroll(has_series, SERIES_SCROLL_CAP)
 
     def close(self) -> None:
         """Release the storage lock."""
