@@ -18,7 +18,7 @@ import sys
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 # Allow `python scripts/check_recipes.py` from any directory.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -37,6 +37,8 @@ from archive.common.constants import INDEX_DIR_NAME, REPO_ROOT  # noqa: E402
 from archive.llm.llm_gateway import (  # noqa: E402
     LlmGateway,
     LlmUnavailableError,
+    Messages,
+    ModelT,
 )
 from archive.pipeline.pipeline_constants import (  # noqa: E402
     EXIT_ERROR,
@@ -86,7 +88,9 @@ class GoldRow:
 class _OfflineLlm:
     """LLM stand-in that is always unavailable."""
 
-    def complete_json(self, *args: Any, **kwargs: Any) -> Any:
+    def complete_json(
+        self, messages: Messages, schema: type[ModelT]
+    ) -> ModelT:
         raise LlmUnavailableError(LLM_OFFLINE_MESSAGE)
 
 
