@@ -15,7 +15,23 @@ DATE_SCAN_PATTERNS: tuple[re.Pattern[str], ...] = (
     DAY_MONTH_NAME_RE,
     MONTH_NAME_DAY_RE,
 )
+# Lets a bare number such as "12500" parse as a currency amount.
 BARE_AMOUNT_SUFFIX = " $"
+TRAILING_PUNCTUATION = ".,;:"
+PUNCTUATION_FOLD = str.maketrans(
+    {
+        "’": "'",
+        "‘": "'",
+        "ʼ": "'",
+        "«": '"',
+        "»": '"',
+        "“": '"',
+        "”": '"',
+        "„": '"',
+        "–": "-",
+        "—": "-",
+    }
+)
 WHITESPACE_RE = re.compile(r"\s+")
 
 ISSUE_QUOTE_UNVERIFIED = (

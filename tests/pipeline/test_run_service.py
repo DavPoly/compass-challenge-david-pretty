@@ -217,6 +217,34 @@ def test_confidence_is_logged_and_the_answer_line_is_unchanged(
     assert len(row["citations"]) == 1  # type: ignore[arg-type]
 
 
+def test_grounding_failure_leaves_the_answer_line_unchanged(
+    indexed: tuple[AppConfig, str],
+    fake_llm: FakeLlm,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config, query = indexed
+    questions = write_questions(
+        tmp_path / "q.jsonl", [{"id": "q1", "question": query}]
+    )
+    answers = tmp_path / "a.jsonl"
+
+    def broken(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("grounding bug")
+
+    monkeypatch.setattr(run_service, "check_grounding", broken)
+
+    with caplog.at_level(logging.INFO):
+        code = run_service.run(questions, answers, config)
+
+    row = read_answers(answers)["q1"]
+    assert code == EXIT_OK
+    assert "question q1: grounding check failed" in caplog.text
+    assert row["status"] == "answered"
+    assert row["answer"] == "42"
+
+
 def test_duplicate_id_answers_only_the_first_question(
     indexed: tuple[AppConfig, str], fake_llm: FakeLlm, tmp_path: Path
 ) -> None:

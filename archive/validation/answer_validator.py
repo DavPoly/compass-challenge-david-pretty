@@ -54,6 +54,11 @@ class ValidationResult(BaseModel):
     dropped_citations: list[str]
 
 
+def normalize_doc_id(citation: str) -> str:
+    """Doc id of a citation: trimmed, without a ``.pdf`` suffix."""
+    return citation.strip().removesuffix(PDF_SUFFIX)
+
+
 def normalize_date(text: str) -> str | None:
     """Return ISO form when the whole text is one date, else None.
 
@@ -183,7 +188,7 @@ def _filter_citations(
     kept: list[str] = []
     dropped: list[str] = []
     for citation in citations:
-        doc_id = citation.strip().removesuffix(PDF_SUFFIX)
+        doc_id = normalize_doc_id(citation)
         if doc_id not in allowed:
             if citation not in dropped:
                 dropped.append(citation)
