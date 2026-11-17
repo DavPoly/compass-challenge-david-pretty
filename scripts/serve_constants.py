@@ -3,7 +3,6 @@
 LIVE_DIRNAME = "live"
 SERVER_DIRNAME = "server"
 EMPTY_RUN_DIRNAME = "no-run"
-LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 
 SCRIPT_DESCRIPTION = (
     "Serve the viewer on localhost and answer questions typed in it."
@@ -18,9 +17,8 @@ MSG_NO_RUN_DIR = (
 )
 MSG_BUILD_FAILED = "Cannot build the viewer: {reason}"
 MSG_PORT_BUSY = (
-    "Impossible d'écouter sur le port {port} : {reason}. "
-    "Choisissez un autre port avec --port."
+    "Cannot listen on port {port}: {reason}. Choose another port with --port."
 )
-MSG_READY = "Serveur prêt : http://{host}:{port}"
-MSG_STOPPED = "Serveur arrêté."
+MSG_READY = "Server ready: http://{host}:{port}"
+MSG_STOPPED = "Server stopped."
 LOG_PAGE_REBUILT = "page rebuilt with the new question"

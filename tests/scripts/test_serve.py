@@ -1,8 +1,14 @@
+import contextlib
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
+from archive.common.config import AppConfig
+from archive.ingest.build.manifest_gateway import ManifestError
+from archive.pipeline.engine.engine_service import Engine
 from archive.pipeline.pipeline_constants import EXIT_ERROR
+from archive.retrieval.qdrant.qdrant_gateway import IndexOpenError
 from scripts import serve
 
 ENV_VARS = ("LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL")
@@ -58,3 +64,38 @@ def test_missing_run_directory_exits_one(
 
     assert code == EXIT_ERROR
     assert "omit --run" in caplog.text
+
+
+def llm_corpus(tmp_path: Path) -> Path:
+    (tmp_path / "a.pdf").write_bytes(b"%PDF")
+    return tmp_path
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        OSError("disk unreadable"),
+        IndexOpenError("locked"),
+        ManifestError("bad manifest"),
+    ],
+)
+def test_engine_startup_failure_exits_one_without_traceback(
+    llm_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    error: Exception,
+) -> None:
+    @contextlib.contextmanager
+    def broken_open(config: AppConfig) -> Iterator[Engine]:
+        raise error
+        yield  # pragma: no cover - makes this a generator
+
+    monkeypatch.setattr(serve, "open_engine", broken_open)
+
+    code = serve.main(["--corpus", str(llm_corpus(tmp_path))])
+
+    assert code == EXIT_ERROR
+    assert "Cannot open the index" in caplog.text
+    assert str(error) in caplog.text
+    assert not any(record.exc_info for record in caplog.records)

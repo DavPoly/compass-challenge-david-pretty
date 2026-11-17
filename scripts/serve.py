@@ -7,10 +7,13 @@ index or port, 2 wrong usage.
 """
 
 import argparse
+import contextlib
 import dataclasses
+import functools
 import logging
 import sys
 import time
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 # Allow `python scripts/serve.py` from any directory.
@@ -19,24 +22,22 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from archive.common.config import AppConfig, ConfigError  # noqa: E402
 from archive.common.constants import (  # noqa: E402
     CORPUS_DIR_NAME,
-    PDF_GLOB,
+    LOG_FORMAT,
     REPO_ROOT,
 )
-from archive.ingest.build.manifest_gateway import ManifestError  # noqa: E402
 from archive.pipeline.engine.engine_service import (  # noqa: E402
+    ENGINE_OPEN_ERRORS,
     Engine,
+    corpus_is_ready,
+    log_engine_open_failure,
     open_engine,
 )
 from archive.pipeline.pipeline_constants import (  # noqa: E402
     EXIT_ERROR,
     EXIT_OK,
-    MSG_INDEX_OPEN,
-    MSG_NO_CORPUS,
-)
-from archive.retrieval.qdrant.qdrant_gateway import (  # noqa: E402
-    IndexOpenError,
 )
 from archive.server.ask_service import AskService  # noqa: E402
+from archive.server.rebuild_service import RebuildScheduler  # noqa: E402
 from archive.server.server_constants import DEFAULT_PORT, HOST  # noqa: E402
 from archive.server.server_gateway import (  # noqa: E402
     ServerContext,
@@ -54,7 +55,6 @@ from scripts.serve_constants import (  # noqa: E402
     HELP_PORT,
     HELP_RUN,
     LIVE_DIRNAME,
-    LOG_FORMAT,
     LOG_PAGE_REBUILT,
     MSG_BUILD_FAILED,
     MSG_NO_RUN_DIR,
@@ -86,10 +86,6 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _has_pdfs(corpus_dir: Path) -> bool:
-    return corpus_dir.is_dir() and any(corpus_dir.glob(PDF_GLOB))
-
-
 def _viewer_request(
     config: AppConfig, run_dir: Path | None, live_dir: Path
 ) -> ViewerRequest:
@@ -105,30 +101,15 @@ def _viewer_request(
     )
 
 
-def _serve(engine: Engine, args: argparse.Namespace) -> int:
-    config = engine.config
-    live_dir = config.traces_dir / LIVE_DIRNAME
-    request = _viewer_request(config, args.run, live_dir)
+def _rebuild_page(request: ViewerRequest) -> None:
+    """Re-render the page and every image: fine for a few questions."""
+    build_viewer(request)
+    logger.info(LOG_PAGE_REBUILT)
 
-    def rebuild_page() -> None:
-        # Re-renders every image: fine for a handful of live questions.
-        build_viewer(request)
-        logger.info(LOG_PAGE_REBUILT)
 
-    try:
-        rebuild_page()
-    except (OSError, ValueError) as error:
-        logger.error(MSG_BUILD_FAILED.format(reason=error))
-        return EXIT_ERROR
-    context = ServerContext(
-        AskService(engine, request, live_dir), request.out_dir, rebuild_page
-    )
-    try:
-        server = create_server(args.port, context)
-    except OSError as error:
-        logger.error(MSG_PORT_BUSY.format(port=args.port, reason=error))
-        return EXIT_ERROR
-    ready = MSG_READY.format(host=HOST, port=server.server_address[1])
+def _run_server(server: ThreadingHTTPServer) -> None:
+    """Announce the address, serve until interrupted, then close."""
+    ready = MSG_READY.format(host=HOST, port=server.server_port)
     print(ready)
     logger.info(ready)
     try:
@@ -137,6 +118,29 @@ def _serve(engine: Engine, args: argparse.Namespace) -> int:
         logger.info(MSG_STOPPED)
     finally:
         server.server_close()
+
+
+def _serve(engine: Engine, args: argparse.Namespace) -> int:
+    config = engine.config
+    live_dir = config.traces_dir / LIVE_DIRNAME
+    request = _viewer_request(config, args.run, live_dir)
+    try:
+        _rebuild_page(request)
+    except (OSError, ValueError) as error:
+        logger.error(MSG_BUILD_FAILED.format(reason=error))
+        return EXIT_ERROR
+    scheduler = RebuildScheduler(functools.partial(_rebuild_page, request))
+    context = ServerContext(
+        ask=AskService(engine, request, live_dir),
+        out_dir=request.out_dir,
+        on_result=scheduler.request,
+    )
+    try:
+        server = create_server(args.port, context)
+    except OSError as error:
+        logger.error(MSG_PORT_BUSY.format(port=args.port, reason=error))
+        return EXIT_ERROR
+    _run_server(server)
     return EXIT_OK
 
 
@@ -152,20 +156,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: {error}", file=sys.stderr)
         return EXIT_ERROR
     config = dataclasses.replace(config, corpus_dir=args.corpus)
-    if not _has_pdfs(config.corpus_dir):
-        logger.error(MSG_NO_CORPUS.format(path=config.corpus_dir))
+    if not corpus_is_ready(config.corpus_dir):
         return EXIT_ERROR
     if args.run is not None and not args.run.is_dir():
         logger.error(MSG_NO_RUN_DIR.format(path=args.run))
         return EXIT_ERROR
-    try:
-        with open_engine(config) as engine:
-            return _serve(engine, args)
-    except (IndexOpenError, ManifestError) as error:
-        logger.error(
-            MSG_INDEX_OPEN.format(path=config.index_dir, reason=error)
-        )
-        return EXIT_ERROR
+    with contextlib.ExitStack() as stack:
+        try:
+            engine = stack.enter_context(open_engine(config))
+        except ENGINE_OPEN_ERRORS as error:
+            log_engine_open_failure(config, error)
+            return EXIT_ERROR
+        return _serve(engine, args)
 
 
 if __name__ == "__main__":
