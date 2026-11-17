@@ -394,7 +394,9 @@
     renderAll();
   }
   function addQuestion(question) {
-    QUESTIONS.push(question);
+    var index = QUESTIONS.findIndex(function (item) { return item.id === question.id; });
+    if (index >= 0) QUESTIONS[index] = question;
+    else QUESTIONS.push(question);
     state.status = "all"; state.confidence = "all";
     setSearch("", false);
   }
