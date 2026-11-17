@@ -6,9 +6,11 @@ from decimal import Decimal
 from difflib import SequenceMatcher
 
 from archive.agent.recipes.recipe_constants import (
+    AMOUNT_LINE_RE,
     CAD_MARK_RE,
     CLIENT_LINE_RE,
     CLIENT_MATCH_RATIO,
+    CLIENT_MAX_LENGTH_DELTA,
     DOLLAR_MARK,
     PROJECT_LINE_RE,
     SUBTOTAL_LINE_RE,
@@ -18,6 +20,7 @@ from archive.common.text.text_normalize_utils import normalize_for_match
 from archive.validation.answer_validator import normalize_amount
 
 _CAD_MARK = re.compile(CAD_MARK_RE, re.IGNORECASE)
+_AMOUNT_LINE = re.compile(AMOUNT_LINE_RE)
 _CLIENT_LINE = re.compile(CLIENT_LINE_RE, re.IGNORECASE | re.MULTILINE)
 _PROJECT_LINE = re.compile(PROJECT_LINE_RE, re.IGNORECASE | re.MULTILINE)
 _SUBTOTAL_LINE = re.compile(SUBTOTAL_LINE_RE, re.IGNORECASE | re.MULTILINE)
@@ -52,12 +55,30 @@ def _read_amount(
     match = pattern.search(text)
     if match is None:
         return None, None
-    normalized = normalize_amount(_CAD_MARK.sub(DOLLAR_MARK, match["value"]))
-    amount = Decimal(normalized) if normalized is not None else None
-    return amount, match.group(0).strip()
+    return parse_amount_text(match["value"]), match.group(0).strip()
+
+
+def parse_amount_text(text: str) -> Decimal | None:
+    """Exact amount of a printed value, or None when unreadable.
+
+    A trailing "CAD" mark counts as a dollar sign.
+    """
+    normalized = normalize_amount(_CAD_MARK.sub(DOLLAR_MARK, text))
+    return Decimal(normalized) if normalized is not None else None
+
+
+def read_line_amount(line: str) -> Decimal | None:
+    """Amount printed after the label of one "label : amount" line.
+
+    Returns None for a multi-line text or a line without a readable
+    amount.
+    """
+    match = _AMOUNT_LINE.match(line.strip())
+    return parse_amount_text(match["value"]) if match else None
 
 
 def _read_value(pattern: re.Pattern[str], text: str) -> str | None:
+    """Return the captured value of the first match, or None."""
     match = pattern.search(text)
     return match["value"] if match else None
 
@@ -80,17 +101,26 @@ def parse_invoice(text: str) -> InvoiceFields:
     )
 
 
+def _contains_tokens(haystack: str, needle: str) -> bool:
+    """Whether `needle` occurs in `haystack` on word boundaries."""
+    pattern = rf"(?<!\w){re.escape(needle)}(?!\w)"
+    return re.search(pattern, haystack) is not None
+
+
 def client_matches(candidate: str, wanted: str) -> bool:
     """Whether two client names denote the same client.
 
     Names are normalized (case, accents, spacing), then compared by
-    containment either way or by a `difflib` ratio, since the
-    documents carry typos even in their headers.
+    containment on token boundaries either way, or by a `difflib`
+    ratio when the lengths are close, since the documents carry typos
+    even in their headers.
     """
     left = normalize_for_match(candidate)
     right = normalize_for_match(wanted)
     if not left or not right:
         return False
-    if left in right or right in left:
+    if _contains_tokens(left, right) or _contains_tokens(right, left):
         return True
+    if abs(len(left) - len(right)) > CLIENT_MAX_LENGTH_DELTA:
+        return False
     return SequenceMatcher(None, left, right).ratio() >= CLIENT_MATCH_RATIO

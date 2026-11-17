@@ -5,6 +5,7 @@ import pytest
 from archive.agent.recipes.invoice_parsing_utils import (
     client_matches,
     parse_invoice,
+    read_line_amount,
 )
 
 FRENCH_INVOICE = (
@@ -97,6 +98,8 @@ def test_client_matches_variants(candidate: str, wanted: str) -> None:
     ("candidate", "wanted"),
     [
         ("Ville de Val-Mélusine", "Ville de Cap-Pervenche"),
+        ("Ville de Laval", "Ville de Lavaltrie"),
+        ("Ville de Lavaltrie", "Ville de Laval"),
         ("Wrenfield Properties Ltd.", "Marshvale Logistics Ltd."),
         ("", "Wrenfield"),
     ],
@@ -105,3 +108,20 @@ def test_client_matches_rejects_other_clients(
     candidate: str, wanted: str
 ) -> None:
     assert not client_matches(candidate, wanted)
+
+
+def test_amount_line_does_not_cross_a_newline() -> None:
+    fields = parse_invoice("Sous-total :\n47 375 $\nTOTAL : 10 $")
+
+    assert fields.subtotal is None
+    assert fields.total == Decimal("10.00")
+
+
+def test_read_line_amount_takes_the_value_after_the_label() -> None:
+    assert read_line_amount("Sxxx : 20,00 $") == Decimal("20.00")
+    assert read_line_amount("Subtotal: 10 925.00 CAD") == Decimal("10925.00")
+
+
+@pytest.mark.parametrize("line", ["", "Sxxx 20,00 $", "a : 1 $\nb : 2 $"])
+def test_read_line_amount_rejects_unreadable_lines(line: str) -> None:
+    assert read_line_amount(line) is None

@@ -1,5 +1,7 @@
 """Constants of the answer recipes."""
 
+from archive.agent.route.route_model import AmountMeasure
+
 # Aggregation
 
 AGG_LIST_CAP = 3000
@@ -7,10 +9,16 @@ AGG_LIST_CAP = 3000
 # name (ratio >= 0.9); distinct clients sharing a prefix such as
 # "Ville de ..." stay below 0.7. 0.85 sits between the two.
 CLIENT_MATCH_RATIO = 0.85
+# A typo changes the length by a few characters at most; names that
+# differ by more ("Ville de Laval" / "Ville de Lavaltrie") are distinct.
+CLIENT_MAX_LENGTH_DELTA = 3
+CHUNK_ID_SEPARATOR = "#"
+AMOUNT_FORMAT = ".2f"
 PROJECT_CODE_PATTERN = r"BRV-\d{4}-\d{2}"
 CAD_MARK_RE = r"\$?\s*\bCAD\b"
 DOLLAR_MARK = "$"
-INVOICE_AMOUNT_TAIL = r"\s*:\s*(?P<value>.+?)\s*$"
+INVOICE_AMOUNT_TAIL = r"[ \t]*:[ \t]*(?P<value>.+?)[ \t]*$"
+AMOUNT_LINE_RE = r"^[^:\n]*" + INVOICE_AMOUNT_TAIL
 CLIENT_LINE_RE = r"^\s*(?:factur\w*\s*[aà]|bill\s*to)\s*:\s*(?P<value>.+?)\s*$"
 PROJECT_LINE_RE = r"^\s*(?:projet|project)\s*:\s*(?P<value>.+?)\s*$"
 SUBTOTAL_LINE_RE = r"^\s*(?:sous|sub)[-\s]?t\w{2,6}" + INVOICE_AMOUNT_TAIL
@@ -20,8 +28,8 @@ MANAGER_ROW_RE = (
     r"\s*\|\s*(?P<value>.+?)\s*$"
 )
 MISS_INSTRUCTION = {
-    "pre_tax": "the subtotal (amount before taxes)",
-    "tax_included": "the TOTAL (amount with taxes included)",
+    AmountMeasure.PRE_TAX: "the subtotal (amount before taxes)",
+    AmountMeasure.TAX_INCLUDED: "the TOTAL (amount with taxes included)",
 }
 EXTRACT_SYSTEM_PROMPT = """\
 You read invoices whose amount lines contain typos. For each document \
@@ -37,7 +45,12 @@ verbatim. Skip an invoice when you cannot read the amount.
 """
 EXTRACT_USER_PROMPT = "Documents:\n{documents}\n"
 LOG_AGGREGATION = (
-    "question %s aggregation: %d invoices listed, %d matched, %d regex misses"
+    "question %s aggregation: %d invoices listed, %d summed, "
+    "%d without a readable client"
+)
+LOG_LIST_CAPPED = "aggregation listing reached the cap of %d chunks"
+LOG_DUPLICATE_EXTRACTION = (
+    "question %s aggregation: LLM returned doc %s twice, keeping the first"
 )
 LOG_NO_MEASURE = (
     "question %s aggregation: no money measure, using the direct path"
