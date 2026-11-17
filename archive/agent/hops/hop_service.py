@@ -1,7 +1,18 @@
 """Draft an answer, following missing evidence with more hops."""
 
+import logging
+from dataclasses import dataclass, field
+
 from archive.agent.draft_service import draft
 from archive.agent.hops.expand_service import expand_by_identifiers
+from archive.agent.hops.hop_constants import (
+    FOLLOW_UP_DOC_TYPES,
+    FOLLOW_UP_K,
+    FOLLOW_UP_TYPED_K,
+    LOG_FOLLOW_UP,
+    LOG_NO_NEW_CHUNKS,
+    MISSING_QUERY_MAX_CHARS,
+)
 from archive.agent.hops.hop_model import HopPolicy
 from archive.agent.prompt_constants import MAX_PROMPT_CHUNKS
 from archive.agent.recipes.recipe_model import (
@@ -9,9 +20,78 @@ from archive.agent.recipes.recipe_model import (
     RecipeSearchPort,
 )
 from archive.llm.llm_gateway import LlmGateway
-from archive.retrieval.search_service import SearchHit
+from archive.retrieval.search_service import SearchFilters, SearchHit
 from archive.validation.answer_model import DraftAnswer
 from archive.validation.input_model import Question
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _LoopState:
+    """Mutable state of one hop loop.
+
+    Attributes:
+        original: Retrieved hits, best first.
+        targeted: Expansion and follow-up hits, newest first.
+        used: Every hit that reached a prompt, by first appearance.
+        expanded: Whether identifier expansion already ran.
+    """
+
+    original: list[SearchHit]
+    targeted: list[SearchHit] = field(default_factory=list)
+    used: dict[str, SearchHit] = field(default_factory=dict)
+    expanded: bool = False
+
+    def prompt_hits(self) -> list[SearchHit]:
+        """Return the targeted then original hits, deduped and capped."""
+        merged = _dedupe(self.targeted + self.original)
+        return merged[:MAX_PROMPT_CHUNKS]
+
+    def mark_used(self, prompt_hits: list[SearchHit]) -> None:
+        """Record hits that reached a prompt."""
+        for hit in prompt_hits:
+            self.used.setdefault(hit.chunk.chunk_id, hit)
+
+
+def _dedupe(hits: list[SearchHit]) -> list[SearchHit]:
+    """Drop repeated chunk ids, keeping the first of each."""
+    unique: dict[str, SearchHit] = {}
+    for hit in hits:
+        unique.setdefault(hit.chunk.chunk_id, hit)
+    return list(unique.values())
+
+
+def _follow_up_hits(
+    question: Question,
+    missing: str,
+    state: _LoopState,
+    search: RecipeSearchPort,
+) -> list[SearchHit]:
+    """Search for the missing evidence; keep chunks not yet used."""
+    query = missing.strip()[:MISSING_QUERY_MAX_CHARS]
+    found: list[SearchHit] = []
+    if not state.expanded:
+        state.expanded = True
+        found += expand_by_identifiers(question, state.prompt_hits(), search)
+    typed = SearchFilters(doc_types=list(FOLLOW_UP_DOC_TYPES))
+    found += search.hybrid_search(query, typed, FOLLOW_UP_TYPED_K)
+    found += search.hybrid_search(query, None, FOLLOW_UP_K)
+    return [
+        hit for hit in _dedupe(found) if hit.chunk.chunk_id not in state.used
+    ]
+
+
+def _should_follow_up(
+    current: DraftAnswer,
+    drafts_made: int,
+    elapsed_s: float,
+    policy: HopPolicy,
+) -> bool:
+    """Return whether another hop is allowed and worthwhile."""
+    if current.evidence_sufficient or not (current.missing or "").strip():
+        return False
+    return drafts_made < policy.max_drafts and elapsed_s < policy.time_budget_s
 
 
 def run_hops(  # noqa: PLR0913 - frozen signature
@@ -49,11 +129,32 @@ def run_hops(  # noqa: PLR0913 - frozen signature
     Raises:
         LlmUnavailableError: the LLM could not give a valid draft.
     """
+    start = policy.clock()
+    state = _LoopState(original=hits)
     if first_draft is not None:
-        prompt_hits = hits[:MAX_PROMPT_CHUNKS]
-        return RecipeResult(hits=prompt_hits, draft=first_draft)
-    if policy.expand_upfront:
-        hits = expand_by_identifiers(question, hits, search) + hits
-    prompt_hits = hits[:MAX_PROMPT_CHUNKS]
-    drafted = draft(question, prompt_hits, llm)
-    return RecipeResult(hits=prompt_hits, draft=drafted)
+        current = first_draft
+        state.mark_used(hits[:MAX_PROMPT_CHUNKS])
+    else:
+        if policy.expand_upfront:
+            state.expanded = True
+            state.targeted = expand_by_identifiers(question, hits, search)
+        prompt_hits = state.prompt_hits()
+        state.mark_used(prompt_hits)
+        current = draft(question, prompt_hits, llm)
+    drafts_made = 1
+    while _should_follow_up(
+        current, drafts_made, policy.clock() - start, policy
+    ):
+        new_hits = _follow_up_hits(
+            question, current.missing or "", state, search
+        )
+        if not new_hits:
+            logger.info(LOG_NO_NEW_CHUNKS, question.id, drafts_made)
+            break
+        logger.info(LOG_FOLLOW_UP, question.id, drafts_made, len(new_hits))
+        state.targeted = new_hits + state.targeted
+        prompt_hits = state.prompt_hits()
+        state.mark_used(prompt_hits)
+        current = draft(question, prompt_hits, llm)
+        drafts_made += 1
+    return RecipeResult(hits=list(state.used.values()), draft=current)
