@@ -186,6 +186,8 @@ button:disabled { cursor: default; }
 .notice-title { font-weight: 600; font-size: 16px; }
 .notice-body { color: var(--text2); font-size: 15px; margin-top: 2px; overflow-wrap: anywhere; }
 .notice-body ul { margin: 0; padding-left: 20px; }
+.note-internal { font-size: 14px; opacity: 0.8; }
+.note-hint { font-style: italic; }
 .notice-body .strike { text-decoration: line-through; }
 .doc-rows { display: grid; gap: 4px; margin-top: 24px; }
 .doc-row { display: flex; align-items: center; gap: 16px; padding: 12px; border-radius: var(--radius-sm); }
