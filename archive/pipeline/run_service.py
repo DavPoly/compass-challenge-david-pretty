@@ -5,7 +5,7 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import TextIO
@@ -40,9 +40,12 @@ from archive.pipeline.pipeline_constants import (
     LOG_VIEWER_FAILED,
     LOG_VIEWER_READY,
     MODEL_LOAD_WORKERS,
+    MSG_DEADLINE_TRACE,
     MSG_INDEX_OPEN,
     MSG_IO_ERROR,
+    MSG_LATE_TRACE,
     MSG_NO_CORPUS,
+    MSG_OVER_BUDGET_TRACE,
     POLL_INTERVAL_S,
     QUESTION_BUDGET_S,
     WORKER_COUNT,
@@ -182,18 +185,49 @@ def _record_trace(
     question: Question,
     parts: AnswerParts,
     context: RunContext,
-    started_s: float,
+    started_s: float | None,
     error: str | None,
 ) -> None:
-    """Write the question trace; never raises, never alters answers."""
+    """Write the question trace; never raises, never alters answers.
+
+    ``started_s`` is None for a question that never started (elapsed 0).
+    """
     if context.traces is None:
         return
     try:
-        elapsed_s = context.clock() - started_s
+        elapsed_s = 0.0 if started_s is None else context.clock() - started_s
         trace = build_trace(context.run_id, question, parts, elapsed_s, error)
         context.traces.write(trace)
     except Exception:  # broad catch at a boundary: traces are optional
         logger.warning(LOG_TRACE_WRITE_FAILED, question.id, exc_info=True)
+
+
+def _record_not_found_trace(
+    question: Question,
+    context: RunContext,
+    started_s: float | None,
+    error: str,
+) -> None:
+    """Minimal trace for a not_found line written by the run loop."""
+    parts = AnswerParts(FinalAnswer.not_found(question.id))
+    _record_trace(question, parts, context, started_s, error)
+
+
+def _store_answer(
+    question: Question, parts: AnswerParts, writer: AnswerWriter
+) -> bool:
+    """Write the answer line; False when it was not this answer."""
+    try:
+        written = writer.write(parts.answer)
+    except Exception:
+        # Late results are discarded by design: the run may already be
+        # tearing down, so a closed answers file must not kill the
+        # worker thread silently.
+        logger.debug(LOG_LATE_RESULT, question.id, exc_info=True)
+        return False
+    if not written:
+        logger.warning(LOG_LATE_RESULT, question.id)
+    return written
 
 
 def _work(
@@ -220,36 +254,45 @@ def _work(
         parts = AnswerParts(FinalAnswer.not_found(question.id))
         error = f"{type(unexpected).__name__}: {unexpected}"
     _record_trace(question, parts, context, started_s, error)
-    try:
-        written = writer.write(parts.answer)
-    except Exception:
-        # Late results are discarded by design: the run may already be
-        # tearing down, so a closed answers file must not kill the
-        # worker thread silently.
-        logger.debug(LOG_LATE_RESULT, question.id, exc_info=True)
-        return
-    if not written:
-        logger.warning(LOG_LATE_RESULT, question.id)
+    if not _store_answer(question, parts, writer):
+        # The line on disk is not_found: keep the trace consistent.
+        late = replace(parts, answer=FinalAnswer.not_found(question.id))
+        _record_trace(question, late, context, started_s, MSG_LATE_TRACE)
 
 
 def _expire_overdue(
     questions: list[Question],
     writer: AnswerWriter,
     starts: StartTimes,
-    now_s: float,
+    context: RunContext,
 ) -> None:
+    now_s = context.clock()
     for question in questions:
         started = starts.get(question.id)
         if started is None or now_s - started < QUESTION_BUDGET_S:
             continue
         if writer.write(FinalAnswer.not_found(question.id)):
             logger.error(LOG_OVER_BUDGET, question.id, QUESTION_BUDGET_S)
+            _record_not_found_trace(
+                question, context, started, MSG_OVER_BUDGET_TRACE
+            )
 
 
-def _fill_unanswered(questions: list[Question], writer: AnswerWriter) -> None:
+def _fill_unanswered(
+    questions: list[Question],
+    writer: AnswerWriter,
+    starts: StartTimes,
+    context: RunContext,
+) -> None:
     for question in questions:
         if writer.write(FinalAnswer.not_found(question.id)):
             logger.error(LOG_DEADLINE_REACHED, question.id)
+            _record_not_found_trace(
+                question,
+                context,
+                starts.get(question.id),
+                MSG_DEADLINE_TRACE,
+            )
 
 
 def _process_all(
@@ -264,9 +307,9 @@ def _process_all(
             now_s = context.clock()
             if now_s >= context.deadline_s:
                 break
-            _expire_overdue(questions, writer, starts, now_s)
+            _expire_overdue(questions, writer, starts, context)
             context.sleep(POLL_INTERVAL_S)
-        _fill_unanswered(questions, writer)
+        _fill_unanswered(questions, writer, starts, context)
     finally:
         # Stuck worker threads cannot be killed: do not wait for them.
         pool.shutdown(wait=False, cancel_futures=True)

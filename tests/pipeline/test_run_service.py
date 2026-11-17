@@ -937,6 +937,59 @@ def test_trace_building_failure_never_reaches_the_answer(
     assert not run_dir.exists()
 
 
+def test_expired_question_trace_is_not_found_with_an_error(
+    indexed: tuple[AppConfig, str], fake_llm: FakeLlm, tmp_path: Path
+) -> None:
+    config, query = indexed
+    questions = write_questions(
+        tmp_path / "q.jsonl",
+        [
+            {"id": "fast", "question": query},
+            {"id": "slow", "question": f"{query} {SLOW_MARK}"},
+        ],
+    )
+    answers = tmp_path / "a.jsonl"
+
+    _, run_dir = run_traced(questions, answers, config, tmp_path)
+    fake_llm.release.set()
+    assert fake_llm.finished.wait(JOIN_TIMEOUT_S)
+    time.sleep(0.2)
+
+    rows = read_answers(answers)
+    traces = read_traces(run_dir)
+    assert rows["slow"]["status"] == "not_found"
+    assert traces["slow"]["final"] == rows["slow"]
+    assert traces["slow"]["error"]
+    assert traces["fast"]["final"] == rows["fast"]
+    assert traces["fast"]["error"] is None
+
+
+def test_deadline_cut_questions_still_get_a_trace(
+    indexed: tuple[AppConfig, str], fake_llm: FakeLlm, tmp_path: Path
+) -> None:
+    config, query = indexed
+    count = WORKER_COUNT + 2
+    questions = write_questions(
+        tmp_path / "q.jsonl",
+        [
+            {"id": f"q{n}", "question": f"{query} {SLOW_MARK}"}
+            for n in range(count)
+        ],
+    )
+    answers = tmp_path / "a.jsonl"
+
+    _, run_dir = run_traced(questions, answers, config, tmp_path)
+    fake_llm.release.set()
+    time.sleep(0.2)
+
+    rows = read_answers(answers)
+    traces = read_traces(run_dir)
+    assert set(traces) == set(rows)
+    for question_id, trace in traces.items():
+        assert trace["final"] == rows[question_id]
+        assert trace["error"]
+
+
 def test_run_builds_the_viewer_next_to_the_traces(
     indexed: tuple[AppConfig, str],
     fake_llm: FakeLlm,

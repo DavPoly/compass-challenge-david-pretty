@@ -31,6 +31,12 @@ LOG_UNEXPECTED_ERROR = "question %s: unexpected error"
 LOG_LATE_RESULT = "question %s: late result discarded"
 LOG_OVER_BUDGET = "question %s: over %.0f s budget, not_found"
 LOG_DEADLINE_REACHED = "question %s: global deadline reached, not_found"
+MSG_LATE_TRACE = (
+    "late result discarded: the question was already answered "
+    "not_found (over budget or global deadline)"
+)
+MSG_OVER_BUDGET_TRACE = "over the per-question budget: answered not_found"
+MSG_DEADLINE_TRACE = "global deadline reached: answered not_found"
 LOG_SYNC_FAILED = "index sync failed, using the existing index"
 LOG_SYNC_REPORT = (
     "index sync: %d added, %d changed, %d removed, %d failed, "
@@ -50,4 +56,6 @@ TRACE_JSON_INDENT = 2
 TRACE_SAFE_NAME_PATTERN = r"[^A-Za-z0-9_.-]"
 TRACE_UNSAFE_REPLACEMENT = "_"
 TRACE_FALLBACK_NAME = "question"
+TRACE_HASH_CHARS = 8
+TRACE_HASH_SEPARATOR = "-"
 TRACE_VERSION = 1
