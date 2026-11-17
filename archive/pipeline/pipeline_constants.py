@@ -30,3 +30,7 @@ LOG_UNEXPECTED_ERROR = "question %s: unexpected error"
 LOG_LATE_RESULT = "question %s: late result discarded"
 LOG_OVER_BUDGET = "question %s: over %.0f s budget, not_found"
 LOG_DEADLINE_REACHED = "question %s: global deadline reached, not_found"
+LOG_SYNC_FAILED = "index sync failed, using the existing index: %s"
+LOG_SYNC_REPORT = (
+    "index sync: %d added, %d changed, %d removed, %d failed in %.1f s"
+)

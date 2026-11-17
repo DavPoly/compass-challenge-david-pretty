@@ -9,7 +9,10 @@ from pathlib import Path
 import pytest
 
 from archive.common.config import AppConfig
-from archive.ingest.build.index_builder_service import build
+from archive.ingest.build.index_builder_service import (
+    IndexBuildError,
+    build,
+)
 from archive.llm.llm_gateway import LlmUnavailableError, Messages
 from archive.pipeline import run_service
 from archive.pipeline.pipeline_constants import (
@@ -332,9 +335,16 @@ def test_missing_or_empty_corpus_exits_one(
     assert "corpus/" in caplog.text
 
 
-def test_index_open_failure_exits_one(
-    indexed: tuple[AppConfig, str], tmp_path: Path
+def failing_sync(*_args: object, **_kwargs: object) -> None:
+    raise IndexBuildError("cannot clear the index")
+
+
+def test_unusable_index_after_failed_sync_exits_one(
+    indexed: tuple[AppConfig, str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
+    monkeypatch.setattr(run_service, "sync_index", failing_sync)
     config = AppConfig(
         "u", "k", "m", indexed[0].corpus_dir, tmp_path / "no_index"
     )
@@ -343,6 +353,40 @@ def test_index_open_failure_exits_one(
     code = run_service.run(questions, tmp_path / "a.jsonl", config)
 
     assert code == EXIT_ERROR
+
+
+def test_missing_index_is_built_by_the_startup_sync(
+    indexed: tuple[AppConfig, str], tmp_path: Path
+) -> None:
+    config = AppConfig(
+        "u", "k", "m", indexed[0].corpus_dir, tmp_path / "fresh_index"
+    )
+    questions = write_questions(tmp_path / "q.jsonl", [{"id": "a"}])
+
+    code = run_service.run(questions, tmp_path / "a.jsonl", config)
+
+    assert code == EXIT_OK
+    assert (config.index_dir / "manifest.json").is_file()
+
+
+def test_failed_sync_continues_on_the_existing_index(
+    indexed: tuple[AppConfig, str],
+    fake_llm: FakeLlm,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(run_service, "sync_index", failing_sync)
+    config, query = indexed
+    questions = write_questions(
+        tmp_path / "q.jsonl", [{"id": "q", "question": query}]
+    )
+
+    with caplog.at_level(logging.WARNING):
+        code = run_service.run(questions, tmp_path / "a.jsonl", config)
+
+    assert code == EXIT_OK
+    assert "index sync failed" in caplog.text
 
 
 def test_unwritable_answers_path_exits_one(
@@ -433,6 +477,7 @@ def test_citation_outside_the_corpus_is_dropped(
         return [hit for hit in hits if hit.chunk.doc_id == gone.stem][:1]
 
     monkeypatch.setattr(SearchService, "hybrid_search", only_the_gone_doc)
+    monkeypatch.setattr(run_service, "sync_index", failing_sync)
     questions = write_questions(
         tmp_path / "q.jsonl", [{"id": "q", "question": query}]
     )
