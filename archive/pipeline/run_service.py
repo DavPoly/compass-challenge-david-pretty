@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import TextIO
 
 from archive.agent.draft_service import draft
+from archive.agent.retrieve_constants import SEARCH_TOP_K
+from archive.agent.retrieve_service import retrieve
 from archive.common.config import AppConfig
 from archive.common.constants import PDF_GLOB
 from archive.ingest.build.index_builder_service import IndexBuildError
@@ -37,7 +39,6 @@ from archive.pipeline.pipeline_constants import (
     MSG_NO_CORPUS,
     POLL_INTERVAL_S,
     QUESTION_BUDGET_S,
-    SEARCH_TOP_K,
     WORKER_COUNT,
 )
 from archive.retrieval.qdrant_gateway import IndexOpenError
@@ -111,7 +112,7 @@ def _answer_question(question: Question, context: RunContext) -> FinalAnswer:
     if not question.is_valid:
         logger.warning(LOG_QUESTION_INVALID, question.id, question.error)
         return FinalAnswer.not_found(question.id)
-    hits = context.search.hybrid_search(question.question, None, SEARCH_TOP_K)
+    hits = retrieve(question.question, context.search, SEARCH_TOP_K)
     retrieved_ids = {hit.chunk.doc_id for hit in hits}
     result = validate(
         question.id,
