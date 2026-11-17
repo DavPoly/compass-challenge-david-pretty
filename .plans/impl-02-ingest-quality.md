@@ -3,7 +3,7 @@
 **Status:** in-progress
 **Parent:** `.plans/impl-00-roadmap.md` step 02, `.plans/global-architecture.md` §1
 **BASE:** `59a79fc618692ee90f82cf2af424f1bbdfed5a05`
-**Subagent branches:** refactor/ingest-layout (T0)
+**Subagent branches:** refactor/ingest-layout (T0, merged aee336d), feat/table-render (T1), feat/doc-metadata (T2), feat/index-sync (T3), feat/retrieve-hints (T4)
 **Orchestrator branch B:** `feat/ingest-quality`, cut from `main` @ 59a79fc
 
 ## Context
