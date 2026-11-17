@@ -19,14 +19,18 @@ class HopPolicy:
     Attributes:
         max_drafts: Most draft calls the loop may make.
         expand_upfront: Expand identifiers before the first draft.
-        time_budget_s: No new draft starts once this has elapsed.
+        time_budget_s: No new draft starts once this has elapsed
+            since `started_s`.
         clock: Monotonic time source, injectable for tests.
+        started_s: `clock` reading when the question began; when
+            None the budget runs from the start of the hop loop.
     """
 
     max_drafts: int
     expand_upfront: bool
     time_budget_s: float
     clock: Callable[[], float] = time.monotonic
+    started_s: float | None = None
 
     @classmethod
     def multi_hop(cls) -> Self:

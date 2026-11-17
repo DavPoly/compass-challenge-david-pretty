@@ -357,6 +357,21 @@ def test_time_budget_blocks_a_new_draft() -> None:
     assert result.draft == _gap()
 
 
+def test_budget_runs_from_the_policy_start() -> None:
+    llm = FakeLlm(_gap(), ANSWER)
+    policy = HopPolicy(
+        max_drafts=3,
+        expand_upfront=False,
+        time_budget_s=10.0,
+        clock=FakeClock(15.0, 15.0),
+        started_s=0.0,
+    )
+
+    _run(llm, FakeSearch(plain=[_hit("doc_b")]), policy)
+
+    assert len(llm.calls) == 1
+
+
 def test_upfront_expansion_runs_once_before_first_draft(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

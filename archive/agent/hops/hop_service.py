@@ -215,7 +215,9 @@ def run_hops(  # noqa: PLR0913 - frozen signature
     Raises:
         LlmUnavailableError: the LLM could not give a valid draft.
     """
-    start = policy.clock()
+    start = policy.started_s
+    if start is None:
+        start = policy.clock()
     state = _LoopState(original=hits)
     if first_draft is not None:
         current = first_draft

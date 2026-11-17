@@ -1,5 +1,8 @@
 """Answer one question: plan, run a recipe or retrieve, then draft."""
 
+import time
+from dataclasses import replace
+
 from archive.agent.draft_service import draft
 from archive.agent.hops.hop_model import HopPolicy
 from archive.agent.hops.hop_service import needs_follow_up, run_hops
@@ -29,32 +32,34 @@ def answer_question(
     Raises:
         LlmUnavailableError: the LLM could not give a valid draft.
     """
+    started_s = time.monotonic()
     plan = plan_question(question, llm)
     result = _run_recipe(question, plan, search, llm)
     if result is None:
         hits = retrieve(question.question, search, SEARCH_TOP_K)
         if plan.family is QuestionFamily.MULTI_HOP:
-            result = run_hops(
-                question, hits, search, llm, HopPolicy.multi_hop()
-            )
+            policy = replace(HopPolicy.multi_hop(), started_s=started_s)
+            result = run_hops(question, hits, search, llm, policy)
         else:
             result = RecipeResult(hits=hits)
     if result.draft is not None:
         return result.draft, _doc_ids(result.hits)
-    return _draft_with_safety_net(question, result, search, llm)
+    return _draft_with_safety_net(question, result, search, llm, started_s)
 
 
-def _draft_with_safety_net(
+def _draft_with_safety_net(  # noqa: PLR0913 - one value per input
     question: Question,
     result: RecipeResult,
     search: RecipeSearchPort,
     llm: LlmGateway,
+    started_s: float,
 ) -> tuple[DraftAnswer, set[str]]:
     """Draft from a recipe result; hop once more on a named gap.
 
     The first draft uses the top `MAX_PROMPT_CHUNKS` hits and the
     recipe note. When `needs_follow_up` holds, a safety-net hop loop
-    continues from it, carrying the same note.
+    continues from it, carrying the same note; its time budget runs
+    from `started_s`, the clock reading when the question began.
 
     Returns:
         The final draft and the doc ids of every hit that was used.
@@ -66,12 +71,13 @@ def _draft_with_safety_net(
     drafted = draft(question, prompt_hits, llm, note=result.note)
     if not needs_follow_up(drafted):
         return drafted, _doc_ids(prompt_hits)
+    policy = replace(HopPolicy.safety_net(), started_s=started_s)
     hopped = run_hops(
         question,
         result.hits,
         search,
         llm,
-        HopPolicy.safety_net(),
+        policy,
         first_draft=drafted,
         note=result.note,
     )
