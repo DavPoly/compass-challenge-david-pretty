@@ -11,9 +11,11 @@ from archive.agent.hops.hop_constants import (
     FOLLOW_UP_K,
     FOLLOW_UP_TYPED_K,
     HOP_LOG_MISSING_MAX_CHARS,
+    HOP_NEW_HITS_MAX,
     LOG_DRAFT,
     LOG_FOLLOW_UP,
     LOG_NO_NEW_CHUNKS,
+    MIN_ORIGINAL_SLOTS,
     MISSING_QUERY_MAX_CHARS,
 )
 from archive.agent.hops.hop_model import HopPolicy
@@ -51,15 +53,26 @@ class _LoopState:
     expanded: bool = False
 
     def prompt_hits(self) -> list[SearchHit]:
-        """Return targeted hits, linked originals, then the rest.
+        """Return targeted hits, then linked originals, then the rest.
 
         Originals sharing a non-email identifier with a targeted hit
-        come before unlinked ones. The result is deduped and capped.
+        come before unlinked ones. At least `MIN_ORIGINAL_SLOTS`
+        prompt slots (or all originals, if fewer) stay reserved for
+        originals, so a long targeted list cannot push out the start
+        of the chain; older targeted hits are cut first.
         """
-        linked_codes = _codes(self.targeted)
+        targeted = dedupe_hits(self.targeted)
+        targeted_ids = {hit.chunk.chunk_id for hit in targeted}
+        linked_codes = _codes(targeted)
         linked = [hit for hit in self.original if _codes([hit]) & linked_codes]
-        merged = dedupe_hits(self.targeted + linked + self.original)
-        return merged[:MAX_PROMPT_CHUNKS]
+        originals = [
+            hit
+            for hit in dedupe_hits(linked + self.original)
+            if hit.chunk.chunk_id not in targeted_ids
+        ]
+        reserved = min(MIN_ORIGINAL_SLOTS, len(originals))
+        kept = targeted[: MAX_PROMPT_CHUNKS - reserved]
+        return kept + originals[: MAX_PROMPT_CHUNKS - len(kept)]
 
     def mark_used(self, prompt_hits: list[SearchHit]) -> None:
         """Record hits that reached a prompt."""
@@ -80,7 +93,7 @@ def _follow_up_hits(
     state: _LoopState,
     search: RecipeSearchPort,
 ) -> list[SearchHit]:
-    """Search for the missing evidence; keep chunks not yet used."""
+    """Search for the missing evidence; keep chunks not yet seen."""
     query = missing.strip()[:MISSING_QUERY_MAX_CHARS]
     found: list[SearchHit] = []
     if not state.expanded:
@@ -89,10 +102,9 @@ def _follow_up_hits(
     typed = SearchFilters(doc_types=list(FOLLOW_UP_DOC_TYPES))
     found += search.hybrid_search(query, typed, FOLLOW_UP_TYPED_K)
     found += search.hybrid_search(query, None, FOLLOW_UP_K)
+    seen = state.used.keys() | {hit.chunk.chunk_id for hit in state.targeted}
     return [
-        hit
-        for hit in dedupe_hits(found)
-        if hit.chunk.chunk_id not in state.used
+        hit for hit in dedupe_hits(found) if hit.chunk.chunk_id not in seen
     ]
 
 
@@ -208,7 +220,7 @@ def run_hops(  # noqa: PLR0913 - frozen signature
             logger.info(LOG_NO_NEW_CHUNKS, question.id, drafts_made)
             break
         logger.info(LOG_FOLLOW_UP, question.id, drafts_made, len(new_hits))
-        state.targeted = new_hits + state.targeted
+        state.targeted = new_hits[:HOP_NEW_HITS_MAX] + state.targeted
         current = _draft_next(question, state, llm, note)
         drafts_made += 1
         _log_draft(question, drafts_made, current)

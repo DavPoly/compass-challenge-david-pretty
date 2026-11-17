@@ -5,6 +5,8 @@ import pytest
 from archive.agent.hops import hop_service
 from archive.agent.hops.hop_constants import (
     HOP_LOG_MISSING_MAX_CHARS,
+    HOP_NEW_HITS_MAX,
+    MIN_ORIGINAL_SLOTS,
     MISSING_QUERY_MAX_CHARS,
 )
 from archive.agent.hops.hop_model import HopPolicy
@@ -437,3 +439,47 @@ def test_no_targeted_hits_keeps_original_order() -> None:
     )
 
     assert _doc_ids(result) == ["doc_a", "doc_b", "doc_c"]
+
+
+def test_many_targeted_hits_keep_originals_and_earlier_hops() -> None:
+    first = [_hit(f"doc_t{n:02d}") for n in range(HOP_NEW_HITS_MAX + 4)]
+    second = [_hit(f"doc_u{n:02d}") for n in range(HOP_NEW_HITS_MAX + 4)]
+
+    class TwoHopSearch(FakeSearch):
+        def hybrid_search(
+            self, query: str, filters: SearchFilters | None, k: int
+        ) -> list[SearchHit]:
+            self.queries.append((query, filters, k))
+            return (
+                []
+                if filters
+                else (first, second)[(len(self.queries) - 1) // 2]
+            )
+
+    originals = [_hit(f"doc_o{n:02d}") for n in range(MAX_PROMPT_CHUNKS)]
+    llm = FakeLlm(_gap(), _gap("again"), ANSWER)
+
+    _run(llm, TwoHopSearch(), HopPolicy.multi_hop(), hits=originals)
+
+    last = llm.user_prompt(2)
+    assert last.count("<document ") == MAX_PROMPT_CHUNKS
+    assert "doc_o00" in last
+    assert last.count("doc_o") >= MIN_ORIGINAL_SLOTS
+    assert "doc_u00" in last and "doc_t00" in last
+    assert last.index("doc_u00") < last.index("doc_t00")
+    assert f"doc_t{HOP_NEW_HITS_MAX:02d}" not in last
+
+
+def test_targeted_but_unprompted_hit_is_not_new(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    targeted = [_hit(f"doc_t{n:02d}") for n in range(MAX_PROMPT_CHUNKS)]
+    _patch_expand(monkeypatch, targeted)
+    llm = FakeLlm(_gap())
+    cut_off = targeted[-1]
+
+    result = _run(llm, FakeSearch(plain=[cut_off]), HopPolicy.multi_hop())
+
+    assert "doc_t15" not in llm.user_prompt(0)
+    assert len(llm.calls) == 1
+    assert cut_off not in result.hits
