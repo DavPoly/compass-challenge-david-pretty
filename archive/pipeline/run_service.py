@@ -14,7 +14,6 @@ from archive.agent.retrieve_constants import SEARCH_TOP_K
 from archive.agent.retrieve_service import retrieve
 from archive.common.config import AppConfig
 from archive.common.constants import PDF_GLOB
-from archive.ingest.build.index_builder_service import IndexBuildError
 from archive.ingest.build.index_sync_service import sync_index
 from archive.ingest.build.manifest_gateway import ManifestError
 from archive.llm.llm_gateway import LlmGateway, LlmUnavailableError
@@ -231,11 +230,17 @@ def _valid_doc_ids(search: SearchService, corpus_dir: Path) -> frozenset[str]:
 
 
 def _sync_index_or_continue(config: AppConfig) -> None:
-    """Sync the index with the corpus; a failure keeps the old index."""
+    """Sync the index with the corpus; a failure is logged, not fatal.
+
+    The full-build fallback only runs when the index is already
+    unusable, so a failed sync never replaces a usable index.
+    """
     try:
         report = sync_index(config.corpus_dir, config.index_dir)
-    except (IndexBuildError, IndexOpenError, ManifestError, OSError) as error:
-        logger.warning(LOG_SYNC_FAILED, error)
+    except Exception:  # noqa: BLE001
+        # Best effort: any failure (pool, Qdrant, validation) must not
+        # stop the run, the existing index is still usable.
+        logger.exception(LOG_SYNC_FAILED)
         return
     logger.info(
         LOG_SYNC_REPORT,

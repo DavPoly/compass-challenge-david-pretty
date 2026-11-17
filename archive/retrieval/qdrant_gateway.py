@@ -1,5 +1,6 @@
 """Embedded Qdrant access: sparse (BM25-style) indexing and search."""
 
+import logging
 import threading
 import warnings
 from collections.abc import Collection, Sequence
@@ -14,6 +15,7 @@ from archive.retrieval.qdrant_constants import (
     FIELD_DOC_ID,
     FIELD_SERIES,
     KEYWORD_PAYLOAD_FIELDS,
+    LOG_SERIES_CAP_REACHED,
     OPEN_FAILURE_HINT,
     QDRANT_SUBDIR,
     SCROLL_PAGE_SIZE,
@@ -22,6 +24,8 @@ from archive.retrieval.qdrant_constants import (
     UPSERT_BATCH_SIZE,
 )
 from archive.retrieval.sparse_encoding_utils import point_id, sparse_vector
+
+logger = logging.getLogger(__name__)
 
 
 class IndexOpenError(Exception):
@@ -179,7 +183,10 @@ class QdrantGateway:
                 )
             ]
         )
-        return self.scroll(has_series, SERIES_SCROLL_CAP)
+        chunks = self.scroll(has_series, SERIES_SCROLL_CAP)
+        if len(chunks) >= SERIES_SCROLL_CAP:
+            logger.warning(LOG_SERIES_CAP_REACHED, SERIES_SCROLL_CAP)
+        return chunks
 
     def close(self) -> None:
         """Release the storage lock."""

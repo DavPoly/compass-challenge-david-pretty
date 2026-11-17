@@ -11,6 +11,8 @@ from archive.ingest.build.build_constants import (
     LOG_SYNC_DONE,
     LOG_SYNC_FULL_BUILD,
     LOG_SYNC_SKIPPED,
+    REASON_NO_COLLECTION,
+    REASON_NO_STORAGE,
 )
 from archive.ingest.build.index_builder_service import (
     build,
@@ -32,7 +34,12 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class SyncReport:
-    """Doc ids touched by a sync, and its duration."""
+    """Doc ids touched by a sync, and its duration.
+
+    A changed PDF that fails to parse is listed in both `changed` and
+    `failed`: its old points are removed and it stays out of the index
+    until it parses.
+    """
 
     added: list[str]
     changed: list[str]
@@ -92,7 +99,7 @@ def sync_index(
     if gateway is None:
         return _full_build(corpus_dir, index_dir, workers, started)
     try:
-        stale = [*diff.changed, *diff.removed]
+        stale = [*diff.added, *diff.changed, *diff.removed]
         _drop_stale(gateway, index_dir, stale, manifest)
         todo = [paths[doc_id] for doc_id in [*diff.added, *diff.changed]]
         failed = _ingest(gateway, todo, manifest, workers)
@@ -123,7 +130,7 @@ def _usable_manifest(index_dir: Path) -> dict[str, ManifestEntry] | None:
         logger.warning(LOG_SYNC_FULL_BUILD, index_dir, error)
         return None
     if not storage.is_dir() or not any(storage.iterdir()):
-        logger.warning(LOG_SYNC_FULL_BUILD, index_dir, "no Qdrant storage")
+        logger.warning(LOG_SYNC_FULL_BUILD, index_dir, REASON_NO_STORAGE)
         return None
     return manifest
 
@@ -133,7 +140,7 @@ def _open_collection(index_dir: Path) -> QdrantGateway | None:
     if gateway.has_collection():
         return gateway
     gateway.close()
-    logger.warning(LOG_SYNC_FULL_BUILD, index_dir, "no collection")
+    logger.warning(LOG_SYNC_FULL_BUILD, index_dir, REASON_NO_COLLECTION)
     return None
 
 
@@ -175,12 +182,17 @@ def _drop_stale(
 ) -> None:
     """Delete docs from the collection and `manifest`, then save it.
 
-    The manifest is saved right after the deletions, so a crash before
-    the upserts leaves those docs to be re-added by the next sync.
+    Added docs are included: a crash between an upsert and the
+    manifest write leaves points the manifest does not know. The
+    series are refreshed before the manifest is saved, so a failure
+    leaves the stale docs listed and the next sync redoes the work. The
+    manifest is saved before the upserts, so a crash after this point
+    leaves those docs to be re-added by the next sync.
     """
     gateway.delete_docs(stale)
     for doc_id in stale:
-        del manifest[doc_id]
+        manifest.pop(doc_id, None)
+    _refresh_series(gateway)
     write_manifest(index_dir, manifest)
 
 

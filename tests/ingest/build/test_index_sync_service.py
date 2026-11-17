@@ -1,3 +1,4 @@
+import json
 import shutil
 from pathlib import Path
 
@@ -170,3 +171,49 @@ def test_refresh_series_recomputes_stored_chunks(tmp_path: Path) -> None:
     finally:
         gateway.close()
     assert ends == {"a#0": "2024-01-01", "b#0": None}
+
+
+def test_orphan_chunks_of_unlisted_doc_are_deleted(
+    synced: tuple[Path, Path, list[Path]],
+) -> None:
+    corpus, index, pdfs = synced
+    doc_id = pdfs[0].stem
+    manifest_path = index / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    del manifest[doc_id]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    orphan_id = f"{doc_id}#orphan"
+    gateway = QdrantGateway.open(index)
+    try:
+        gateway.upsert([series_chunk(orphan_id, "2023-01-01")])
+    finally:
+        gateway.close()
+    report = sync_index(corpus, index, WORKERS)
+    assert report.added == [doc_id]
+    with SearchService.open(index) as service:
+        hits = service.list_by_filter(SearchFilters(), LIST_CAP)
+    assert orphan_id not in {hit.chunk.chunk_id for hit in hits}
+
+
+def test_removing_latest_version_resets_previous_effective_to(
+    tmp_path: Path,
+) -> None:
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    index = tmp_path / "index"
+    gateway = QdrantGateway.open(index)
+    try:
+        gateway.ensure_collection()
+        gateway.upsert(
+            [
+                series_chunk("a#0", "2023-01-01").model_copy(
+                    update={"effective_to": "2024-01-01"}
+                ),
+                series_chunk("b#0", "2024-01-01"),
+            ]
+        )
+        index_sync_service._drop_stale(gateway, index, ["b"], {"b": {}})  # type: ignore[typeddict-item]
+        ends = {c.chunk_id: c.effective_to for c in gateway.scroll_series()}
+    finally:
+        gateway.close()
+    assert ends == {"a#0": None}
