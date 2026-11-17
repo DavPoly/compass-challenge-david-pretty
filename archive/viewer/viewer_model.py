@@ -72,6 +72,7 @@ class QuestionView(BaseModel):
     expected_answer: str | list[str] | None
     retrieved: list[RetrievedView]
     evidence: list[EvidenceView]
+    is_live: bool = False
 
 
 class ViewerData(BaseModel):
@@ -82,3 +83,4 @@ class ViewerData(BaseModel):
     is_scored: bool
     summary: RunSummary
     questions: list[QuestionView]
+    live: bool = False

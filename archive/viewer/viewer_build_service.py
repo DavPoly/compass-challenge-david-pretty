@@ -110,6 +110,8 @@ class ViewerRequest:
     render: EvidenceRenderer
     scores_path: Path | None = None
     template_path: Path = TEMPLATE_PATH
+    extra_trace_dirs: tuple[Path, ...] = ()
+    live: bool = False
     now: Callable[[], datetime] = datetime.now
 
 
@@ -142,7 +144,7 @@ def build_viewer(request: ViewerRequest) -> Path:
     template = _read_template(request.template_path)
     scores = _load_scores(request.scores_path)
     request.out_dir.mkdir(parents=True, exist_ok=True)
-    traces = _load_traces(request.trace_dir)
+    traces = _load_all_traces(request)
     data = _make_viewer_data(traces, scores, request)
     page = _embed(template, data, request.template_path)
     target = request.out_dir / INDEX_FILENAME
@@ -151,18 +153,43 @@ def build_viewer(request: ViewerRequest) -> Path:
     return target
 
 
+def question_view_from_trace(
+    trace: QuestionTrace, request: ViewerRequest, is_live: bool = False
+) -> QuestionView:
+    """Build the unscored view of one trace, as ``build_viewer`` does.
+
+    Evidence images are rendered under ``request.out_dir/pages`` while
+    the budget has time; failures degrade to text-only evidence.
+    """
+    return _question_view(trace, request, None, is_live)
+
+
+def _load_all_traces(
+    request: ViewerRequest,
+) -> list[tuple[QuestionTrace, bool]]:
+    """Run traces by id, then live traces by id, each flagged live."""
+    traces = [(t, False) for t in _load_traces(request.trace_dir)]
+    for extra_dir in request.extra_trace_dirs:
+        traces += [(t, True) for t in _load_traces(extra_dir)]
+    return traces
+
+
 def _make_viewer_data(
-    traces: list[QuestionTrace],
+    traces: list[tuple[QuestionTrace, bool]],
     scores: dict[str, _Score] | None,
     request: ViewerRequest,
 ) -> ViewerData:
-    questions = [_question_view(t, request, scores) for t in traces]
+    questions = [
+        _question_view(trace, request, scores, is_live)
+        for trace, is_live in traces
+    ]
     return ViewerData(
-        run_id=traces[0].run_id if traces else "",
+        run_id=traces[0][0].run_id if traces else "",
         generated_at=request.now().astimezone().isoformat(timespec="seconds"),
         is_scored=scores is not None,
         summary=_summary(questions, scores is not None),
         questions=questions,
+        live=request.live,
     )
 
 
@@ -233,6 +260,7 @@ def _question_view(
     trace: QuestionTrace,
     request: ViewerRequest,
     scores: dict[str, _Score] | None,
+    is_live: bool,
 ) -> QuestionView:
     grounding = trace.grounding
     score = scores.get(trace.question_id) if scores else None
@@ -255,6 +283,7 @@ def _question_view(
         expected_answer=score.expected_answer if score else None,
         retrieved=_retrieved_views(trace.retrieved),
         evidence=_evidence_views(trace, request),
+        is_live=is_live,
     )
 
 
