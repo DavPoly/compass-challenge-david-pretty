@@ -2,7 +2,8 @@
 
 Usage:
     python scripts/measure_recall.py [--gold samples/gold.jsonl]
-        [--index index] [--k 8,12,16,24,32]
+        [--index index] [--k 8,12,16,24,32] [--dense|--no-dense]
+        [--rerank|--no-rerank]
 
 ``--gold`` is a JSONL file whose rows hold ``id``, ``question`` and
 ``citations`` (gold doc ids). Rows with no citations are skipped.
@@ -10,6 +11,11 @@ For each k, recall@k = |gold & retrieved doc ids| / |gold|. Prints a
 per-question table, the mean recall per k and how many questions
 have at least one gold doc in the top k. Retrieval runs once per k,
 because typed slots depend on k.
+
+``--dense`` and ``--rerank`` load the models through the same loaders
+the run uses; without them the measurement is the BM25-only baseline.
+A model that cannot be loaded is noted and the measurement goes on
+without it.
 """
 
 import argparse
@@ -27,12 +33,27 @@ from archive.pipeline.pipeline_constants import (  # noqa: E402
     EXIT_ERROR,
     EXIT_OK,
 )
+from archive.retrieval.models import rerank_gateway  # noqa: E402
+from archive.retrieval.models.embedding_gateway import (  # noqa: E402
+    EmbeddingPort,
+    load_embedder,
+)
+from archive.retrieval.models.model_constants import (  # noqa: E402
+    MODEL_LOAD_TIMEOUT_S,
+)
+from archive.retrieval.models.rerank_gateway import (  # noqa: E402
+    RerankPort,
+    load_reranker,
+)
 from archive.retrieval.search_service import SearchService  # noqa: E402
 from scripts.measure_recall_constants import (  # noqa: E402
     CELL_WIDTH,
     DEFAULT_GOLD_PARTS,
     DEFAULT_KS,
     ID_WIDTH,
+    MSG_DENSE_UNAVAILABLE,
+    MSG_RERANK_UNAVAILABLE,
+    RERANK_GATE_ATTR,
 )
 
 DEFAULT_GOLD = REPO_ROOT.joinpath(*DEFAULT_GOLD_PARTS)
@@ -54,6 +75,18 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         "--index", type=Path, default=REPO_ROOT / INDEX_DIR_NAME
     )
     parser.add_argument("--k", default=DEFAULT_KS)
+    parser.add_argument(
+        "--dense",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="fuse dense vectors into the search (needs the model)",
+    )
+    parser.add_argument(
+        "--rerank",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="re-score the fused hits with the cross-encoder",
+    )
     return parser.parse_args(argv)
 
 
@@ -120,6 +153,37 @@ def _print_report(
     print(_format_row("any", [f"{hits}/{total}" for hits in hits_any]))
 
 
+def _load_dense(is_dense: bool) -> EmbeddingPort | None:
+    """Load the embedder when asked; a failed load stays sparse-only."""
+    if not is_dense:
+        return None
+    embedder = load_embedder(MODEL_LOAD_TIMEOUT_S)
+    if embedder is None:
+        print(MSG_DENSE_UNAVAILABLE, file=sys.stderr)
+    return embedder
+
+
+def _load_rerank(is_rerank: bool) -> RerankPort | None:
+    """Load the reranker when asked, over the production gate.
+
+    `load_reranker` reads the `RERANK_ENABLED` flag of its own module
+    (imported by value from the model constants), so the measurement
+    flips that attribute for the load and restores it right after; the
+    loader keeps its frozen signature.
+    """
+    if not is_rerank:
+        return None
+    enabled = bool(getattr(rerank_gateway, RERANK_GATE_ATTR))
+    setattr(rerank_gateway, RERANK_GATE_ATTR, True)
+    try:
+        reranker = load_reranker(MODEL_LOAD_TIMEOUT_S)
+    finally:
+        setattr(rerank_gateway, RERANK_GATE_ATTR, enabled)
+    if reranker is None:
+        print(MSG_RERANK_UNAVAILABLE, file=sys.stderr)
+    return reranker
+
+
 def main(argv: list[str] | None = None) -> int:
     """Print the recall report; return the process exit code."""
     args = _parse_args(argv)
@@ -128,7 +192,9 @@ def main(argv: list[str] | None = None) -> int:
     if not questions:
         print(f"No gold question with citations in {args.gold}.")
         return EXIT_ERROR
-    with SearchService.open(args.index) as search:
+    embedder = _load_dense(args.dense)
+    reranker = _load_rerank(args.rerank)
+    with SearchService.open(args.index, embedder, reranker) as search:
         rows = _recall_rows(questions, search, ks)
     _print_report(questions, rows, ks)
     return EXIT_OK

@@ -5,7 +5,11 @@ Values are chosen by measurement on the evaluation set.
 
 from pathlib import Path
 
-DENSE_MODEL_NAME = "intfloat/multilingual-e5-small"
+# Multilingual MiniLM: about 50 languages, 0.22 GB quantized ONNX,
+# no query/passage prefixes, and native truncation at 128 tokens.
+DENSE_MODEL_NAME = (
+    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+)
 DENSE_DIM = 384
 RERANK_MODEL_NAME = "jinaai/jina-reranker-v2-base-multilingual"
 RERANK_ENABLED = False
@@ -18,7 +22,7 @@ MODEL_CACHE_DIR = _REPO_ROOT / ".cache" / "models"
 
 DENSE_QUERY_PREFIX = ""
 DENSE_PASSAGE_PREFIX = ""
-DENSE_MAX_TOKENS: int | None = None
+DENSE_MAX_TOKENS: int | None = 128
 DENSE_EMBED_BATCH_SIZE = 32
 
 LOG_MODEL_TIMEOUT = "Model %s not ready after %.0f s; continuing without it."
