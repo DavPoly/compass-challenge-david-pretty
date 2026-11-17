@@ -247,3 +247,15 @@ decisions log, and the roadmap's decision to drop the classifier).
 - Batch A: `feat/route-plan` (T1), `feat/agg-recipe` (T2),
   `feat/superseded-recipe` (T3).
 - Batch B: `feat/check-recipes` (T4).
+- Fix round: `fix/superseded-pick` (LLM picks the policy series).
+
+## Decisions log (implementation)
+
+- 2026-11-17: superseded series vote (T3) is safe but inert on the
+  samples. FR questions do not reach EN-only series (s01), and "Expense
+  Claims Policy" ranks the wrong series (s12). Fix: one LLM call picks
+  the series from the index's ~12 policy titles, or none. "Currently in
+  force" uses today's date, so versions effective in 2027 are not
+  current (user choice). `run_superseded` gains an `llm` parameter.
+- 2026-11-17: T2 merge was 817 lines (≈420 tests), over the 700 soft
+  budget; T4 399 lines. Both flagged and merged.
