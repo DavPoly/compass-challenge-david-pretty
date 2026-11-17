@@ -231,3 +231,17 @@ After the final merge, `pre-commit-review` (`reviewer` + `quality`) runs on
 ## Subagent branches
 
 - Batch 0: `refactor/retrieval-layout` (T0); spike S has no branch.
+- Batch A: `feat/hybrid-search` (T2), `feat/dense-ingest` (T3),
+  `feat/model-loaders` (T1).
+
+## Resume point
+
+2026-11-16, batch A complete. T0, T2, T3 and T1 are merged on
+`feat/dense-rerank`: hybrid RRF search with an optional rerank step,
+a dense ingest pass under the sync budget, and real model loaders
+(fastembed, daemon threads joined with a timeout). Checks green,
+451 tests warm. T4 (batch B, alone) is next, but it is blocked on
+the dense model choice: fastembed 0.9.1 supports only
+multilingual-e5-large among the e5 candidates, and no spike results
+are in the repo. Also open: the global-deadline pipeline test
+flakes on a cold cache (passes warm) — needs a fix round.
