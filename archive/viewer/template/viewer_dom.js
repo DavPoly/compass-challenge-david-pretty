@@ -104,5 +104,57 @@
   var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
   applyTheme(saved === "dark" || saved === "light" ? saved : prefersDark ? "dark" : "light");
 
-  window.ViewerDom = { el: el, clear: clear, icon: icon, ring: ring, isDark: isDark, toggleTheme: toggleTheme };
+  var STATUS = {
+    answered: { label: "Répondue", plural: "Répondues", tone: "green", icon: "task-alt" },
+    not_found: { label: "Introuvable", plural: "Introuvables", tone: "gray", icon: "search-off" },
+    conflict: { label: "Conflit", plural: "Conflits", tone: "pink", icon: "compare" }
+  };
+  var CONF = {
+    high: { label: "Élevée", short: "ÉL", tone: "green" },
+    medium: { label: "Moyenne", short: "MO", tone: "yellow" },
+    low: { label: "Faible", short: "FA", tone: "pink" },
+    unknown: { label: "Inconnue", short: "?", tone: "gray" }
+  };
+  var SMALL_AVATAR_TEXT = 3;
+  var SMALL_FONT_RATIO = 0.24;
+
+  function confKey(question) { return question.confidence || "unknown"; }
+  function asList(value) {
+    if (value === null || value === undefined) return [];
+    return Array.isArray(value) ? value : [value];
+  }
+  function answerText(question) { return asList(question.answer).join(" ou "); }
+  function normalize(text) {
+    return String(text).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  }
+  function initials(text) {
+    return String(text).split(/[\s_\-.]+/).filter(Boolean).slice(0, 2)
+      .map(function (part) { return part[0]; }).join("").toUpperCase();
+  }
+  function formatDate(iso) {
+    var date = new Date(iso);
+    if (!iso || isNaN(date.getTime())) return iso || "";
+    var day = new Intl.DateTimeFormat("fr-CA", { day: "numeric", month: "long", year: "numeric" });
+    var time = new Intl.DateTimeFormat("fr-CA", { hour: "numeric", minute: "2-digit" });
+    return day.format(date) + ", " + time.format(date);
+  }
+  function decimal(number, digits) { return number.toFixed(digits).replace(".", ","); }
+  function tone(name) { return "t-" + name; }
+  function chip(text, toneName, extra) {
+    return el("span", { class: "chip " + tone(toneName) + (extra ? " " + extra : ""), text: text });
+  }
+  function avatar(text, toneName, size) {
+    var props = { class: "avatar " + tone(toneName), style: "--s:" + size + "px" };
+    if (text.length > SMALL_AVATAR_TEXT) props.style += ";font-size:" + Math.round(size * SMALL_FONT_RATIO) + "px";
+    return el("span", props, [text]);
+  }
+  function iconButton(name, label, onclick, extraClass) {
+    return el("button", { class: "round " + (extraClass || ""), type: "button", "aria-label": label, title: label, onclick: onclick }, [icon(name)]);
+  }
+
+  window.ViewerDom = {
+    el: el, clear: clear, icon: icon, ring: ring, isDark: isDark, toggleTheme: toggleTheme,
+    STATUS: STATUS, CONF: CONF, confKey: confKey, asList: asList, answerText: answerText,
+    normalize: normalize, formatDate: formatDate, decimal: decimal, initials: initials, tone: tone, chip: chip, avatar: avatar, iconButton: iconButton
+  };
 })();
