@@ -1,7 +1,12 @@
+import logging
+
 import pytest
 
 from archive.agent.hops import hop_service
-from archive.agent.hops.hop_constants import MISSING_QUERY_MAX_CHARS
+from archive.agent.hops.hop_constants import (
+    HOP_LOG_MISSING_MAX_CHARS,
+    MISSING_QUERY_MAX_CHARS,
+)
 from archive.agent.hops.hop_model import HopPolicy
 from archive.agent.hops.hop_service import run_hops
 from archive.agent.prompt_constants import MAX_PROMPT_CHUNKS
@@ -220,6 +225,28 @@ def test_none_missing_stops_the_loop() -> None:
     _run(llm, FakeSearch(plain=[_hit("doc_b")]), HopPolicy.multi_hop())
 
     assert len(llm.calls) == 1
+
+
+def test_every_draft_logs_one_line_with_truncated_missing(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    long_missing = "x" * (HOP_LOG_MISSING_MAX_CHARS + 50) + "\nforged"
+    llm = FakeLlm(_gap(long_missing), ANSWER)
+    search = FakeSearch(plain=[_hit("doc_b")])
+
+    with caplog.at_level(logging.INFO, logger=hop_service.logger.name):
+        _run(llm, search, HopPolicy.multi_hop())
+
+    lines = [
+        record.getMessage()
+        for record in caplog.records
+        if " draft " in record.getMessage()
+    ]
+    assert len(lines) == 2
+    assert lines[0].startswith(f"question {QUESTION.id}: draft 1 ")
+    assert repr("x" * HOP_LOG_MISSING_MAX_CHARS) in lines[0]
+    assert "forged" not in lines[0]
+    assert lines[1].startswith(f"question {QUESTION.id}: draft 2 ")
 
 
 def test_no_new_chunk_stops_the_loop() -> None:

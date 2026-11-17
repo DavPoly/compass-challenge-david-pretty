@@ -10,6 +10,8 @@ from archive.agent.hops.hop_constants import (
     FOLLOW_UP_DOC_TYPES,
     FOLLOW_UP_K,
     FOLLOW_UP_TYPED_K,
+    HOP_LOG_MISSING_MAX_CHARS,
+    LOG_DRAFT,
     LOG_FOLLOW_UP,
     LOG_NO_NEW_CHUNKS,
     MISSING_QUERY_MAX_CHARS,
@@ -117,6 +119,21 @@ def _should_follow_up(
     return drafts_made < policy.max_drafts and elapsed_s < policy.time_budget_s
 
 
+def _log_draft(
+    question: Question, draft_number: int, current: DraftAnswer
+) -> None:
+    """Log one line describing a draft, with `missing` truncated."""
+    missing = (current.missing or "").strip()[:HOP_LOG_MISSING_MAX_CHARS]
+    logger.info(
+        LOG_DRAFT,
+        question.id,
+        draft_number,
+        current.status.value,
+        current.evidence_sufficient,
+        missing,
+    )
+
+
 def run_hops(  # noqa: PLR0913 - frozen signature
     question: Question,
     hits: list[SearchHit],
@@ -166,6 +183,7 @@ def run_hops(  # noqa: PLR0913 - frozen signature
         state.mark_used(prompt_hits)
         current = draft(question, prompt_hits, llm)
     drafts_made = 1
+    _log_draft(question, drafts_made, current)
     while _should_follow_up(
         current, drafts_made, policy.clock() - start, policy
     ):
@@ -181,4 +199,5 @@ def run_hops(  # noqa: PLR0913 - frozen signature
         state.mark_used(prompt_hits)
         current = draft(question, prompt_hits, llm)
         drafts_made += 1
+        _log_draft(question, drafts_made, current)
     return RecipeResult(hits=list(state.used.values()), draft=current)

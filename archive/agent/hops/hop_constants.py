@@ -24,5 +24,7 @@ FOLLOW_UP_DOC_TYPES = [
     DocType.CONTRACT.value,
 ]
 MISSING_QUERY_MAX_CHARS = 300
+HOP_LOG_MISSING_MAX_CHARS = 120
+LOG_DRAFT = "question %s: draft %d status=%s sufficient=%s missing=%r"
 LOG_FOLLOW_UP = "question %s: hop %d added %d new chunks"
 LOG_NO_NEW_CHUNKS = "question %s: hop %d found no new chunk, stopping"
