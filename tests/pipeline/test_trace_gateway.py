@@ -44,15 +44,24 @@ def test_run_id_format() -> None:
     ("question_id", "expected"),
     [
         ("q-1_a.b", "q-1_a.b.json"),
-        ("a/b\\c:d", "a_b_c_d.json"),
-        ("../../etc", ".._.._etc.json"),
-        ("..", "question.json"),
-        (".", "question.json"),
-        ("", "question.json"),
+        ("s01", "s01.json"),
+        ("a/b\\c:d", "a_b_c_d-b986c9b0.json"),
+        ("../../etc", ".._.._etc-7baf5cb6.json"),
+        ("..", "question-9d891e73.json"),
+        (".", "question-3a52ce78.json"),
+        ("", "question-da39a3ee.json"),
     ],
 )
 def test_filename_is_sanitized(question_id: str, expected: str) -> None:
     assert trace_filename(question_id) == expected
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [("a/b", "a_b"), ("Q1", "q1"), ("a b", "a_b"), ("", "question")],
+)
+def test_distinct_ids_get_distinct_filenames(first: str, second: str) -> None:
+    assert trace_filename(first).lower() != trace_filename(second).lower()
 
 
 def test_write_creates_dir_lazily_and_keeps_unicode(tmp_path: Path) -> None:
