@@ -133,6 +133,20 @@
   function bulletList(lines) {
     return el("ul", {}, lines.map(function (line) { return el("li", { text: String(line) }); }));
   }
+  function missingValuesBody(question) {
+    var missing = question.missing_values || [];
+    if (!missing.length) return bulletList(question.ungrounded_values);
+    var items = missing.map(function (value) {
+      return el("li", {}, [
+        el("strong", { class: "mono", text: String(value) }),
+        document.createTextNode(" — introuvable dans les sources")
+      ]);
+    });
+    return el("div", {}, [
+      el("ul", {}, items),
+      el("div", { class: "muted missing-context", text: "Réponse : " + asList(question.answer).join(" ; ") })
+    ]);
+  }
   function answerBox(question) {
     var box = el("div", { class: "answer-box" }, [el("div", { class: "answer-label", text: "Réponse" })]);
     var items = asList(question.answer);
@@ -174,7 +188,7 @@
       list.push(notice("pink", "error", "Réponse attendue : " + (asList(question.expected_answer).map(String).join(" ou ") || "—")));
     }
     if ((question.ungrounded_values || []).length) {
-      list.push(notice("yellow", "error", "Valeurs non retrouvées dans les sources", bulletList(question.ungrounded_values)));
+      list.push(notice("yellow", "error", "Valeurs non retrouvées dans les sources", missingValuesBody(question)));
     }
     if ((question.dropped_citations || []).length) {
       list.push(notice("gray", "doc", "Citations écartées (non retrouvées dans le document)", bulletList(question.dropped_citations)));
