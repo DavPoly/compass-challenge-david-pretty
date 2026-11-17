@@ -77,3 +77,4 @@ KEY_READY = "ready"
 KEY_BUSY = "busy"
 KEY_ERROR = "error"
 STEP_ELAPSED_DECIMALS = 2
+WINDOWS_OS_NAME = "nt"

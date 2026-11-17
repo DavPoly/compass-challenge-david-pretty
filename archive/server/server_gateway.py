@@ -3,6 +3,7 @@
 import json
 import logging
 import mimetypes
+import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -59,6 +60,7 @@ from archive.server.server_constants import (
     STEP_ELAPSED_DECIMALS,
     STEP_LABELS,
     UNSAFE_NAME_CHARS,
+    WINDOWS_OS_NAME,
 )
 from archive.server.server_model import (
     AskRequest,
@@ -278,6 +280,15 @@ def _run_hook(hook: Callable[[], None]) -> None:
         logger.exception(LOG_RESULT_HOOK_FAILED)
 
 
+class _LocalServer(ThreadingHTTPServer):
+    """Threaded server that refuses a port another process holds.
+
+    On Windows SO_REUSEADDR would let a second server share the port.
+    """
+
+    allow_reuse_address = os.name != WINDOWS_OS_NAME
+
+
 def create_server(port: int, context: ServerContext) -> ThreadingHTTPServer:
     """Bind ``127.0.0.1:port`` (0 = any free port) and return the server.
 
@@ -285,4 +296,4 @@ def create_server(port: int, context: ServerContext) -> ThreadingHTTPServer:
         OSError: the port cannot be bound (for example already in use).
     """
     handler = type("Handler", (_Handler,), {"context": context})
-    return ThreadingHTTPServer((HOST, port), handler)
+    return _LocalServer((HOST, port), handler)
