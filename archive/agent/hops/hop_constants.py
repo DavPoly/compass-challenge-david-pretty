@@ -2,6 +2,10 @@
 
 # Expand
 
+EXPAND_SOURCE_HITS = 3
+EXPAND_CAP = 8
+EMAIL_MARKER = "@"
+
 # Loop
 
 MULTI_HOP_MAX_DRAFTS = 3
