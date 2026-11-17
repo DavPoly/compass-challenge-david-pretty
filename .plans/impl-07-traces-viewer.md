@@ -1,6 +1,6 @@
 # Plan: step 07 traces + click-to-verify viewer (`impl-07-traces-viewer`)
 
-**Status:** done (pending sample run + demo viewer by user)
+**Status:** done
 **BASE:** `4ca11879694d8ee3b12f5ce9360894c514243909` (feat/traces-viewer)
 **Subagent branches:** feat/traces-core, feat/viewer-render, feat/viewer-build, feat/viewer-template, feat/viewer-wiring
 **Parent:** `.plans/impl-00-roadmap.md` step 07; `.plans/global-architecture.md` §6.

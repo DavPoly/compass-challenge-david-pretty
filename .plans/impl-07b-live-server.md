@@ -1,6 +1,6 @@
 # Plan: live "ask the archive" server for the viewer (`impl-07b-live-server`)
 
-**Status:** done (pending real-LLM smoke test by user)
+**Status:** done
 **BASE:** `fd950bf7db07cf674848120f3bc5e407b83ff90c` (feat/traces-viewer)
 **Subagent branches:** feat/live-engine, feat/live-viewer-api, feat/live-ui, feat/live-server
 **Parent:** `.plans/impl-07-traces-viewer.md` (step 07). The work continues on
@@ -208,3 +208,7 @@ in one Agent call, and the main agent does not implement tasks inline.
   no longer builds a static viewer (still writes traces for `serve.py --run`);
   `scripts/build_viewer.py` deleted; no committed `demo/viewer/` (the demo is
   the video). `archive/viewer/` stays as the web app's front end.
+- 2026-11-17: answers are the asked value only (prompt rule); superseded
+  questions naming only a year or month take the latest version in force
+  during that period (user decision; day-count rule rejected). Sample run
+  20261117-174523: 45.00/45.

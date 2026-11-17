@@ -85,3 +85,7 @@ remove what is listed here without a decisions-log entry in this file.
   identifier expansion plus a draft loop driven by `missing` (at most 3
   drafts, 30 s hop budget) and a one-hop safety net for direct
   questions. Score 45.00/45 on the samples after step 05.
+- 2026-11-17: step 07 became the free angle "click to verify": a localhost
+  web app (`scripts/serve.py`) that answers live questions, streams the
+  pipeline steps and shows each quote boxed on the PDF page; the static
+  viewer was dropped. Score 45.00/45 after step 07.
