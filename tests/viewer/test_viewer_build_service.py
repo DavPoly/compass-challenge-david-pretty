@@ -8,7 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from archive.pipeline.trace_model import QuestionTrace, RetrievedChunk
+from archive.common.step_model import PipelineStep
+from archive.pipeline.trace_model import (
+    QuestionTrace,
+    RetrievedChunk,
+    StepRecord,
+)
 from archive.validation.answer_model import (
     AnswerStatus,
     DraftAnswer,
@@ -508,3 +513,28 @@ def test_template_inlines_list_script_before_app(tmp_path: Path) -> None:
     assert text.startswith(
         "<script>const list=1;</script><script>const app=1;</script>"
     )
+
+
+def test_steps_get_french_labels_and_unknown_steps_keep_their_name(
+    tmp_path: Path,
+) -> None:
+    trace = make_trace("q1", ["x"])
+    trace.steps = [
+        StepRecord(
+            step=PipelineStep.RETRIEVE, detail="3 extraits", elapsed_s=0.2
+        ),
+        StepRecord(step=PipelineStep.GROUND, elapsed_s=0.9),
+    ]
+    unknown = StepRecord.model_construct(
+        step="mystery", detail=None, elapsed_s=1.0
+    )
+    trace.steps.append(unknown)
+
+    view = question_view_from_trace(trace, _live_request(tmp_path))
+
+    assert [(s.step, s.label) for s in view.steps] == [
+        ("retrieve", "Recherche dans les archives"),
+        ("ground", "Vérification des citations"),
+        ("mystery", "mystery"),
+    ]
+    assert view.steps[0].detail == "3 extraits"

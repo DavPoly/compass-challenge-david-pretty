@@ -52,6 +52,15 @@ class EvidenceView(BaseModel):
     full_image: str | None
 
 
+class StepView(BaseModel):
+    """One pipeline step that ran, with its French label."""
+
+    step: str
+    label: str
+    detail: str | None = None
+    elapsed_s: float
+
+
 class QuestionView(BaseModel):
     """Everything the page shows for one question."""
 
@@ -73,6 +82,7 @@ class QuestionView(BaseModel):
     retrieved: list[RetrievedView]
     evidence: list[EvidenceView]
     is_live: bool = False
+    steps: list[StepView] = []
 
 
 class ViewerData(BaseModel):
