@@ -162,6 +162,7 @@ dialog.lightbox::backdrop { background: rgba(0, 0, 0, .8); }
   var EVIDENCE_STATE = {
     verified: { cls: "ok", label: "Citation vérifiée" },
     unverified: { cls: "bad", label: "Citation absente du document" },
+    unchecked: { cls: "", label: "Non contrôlée (vérification indisponible)" },
     not_located: { cls: "", label: "Vérifiée, non localisée sur la page" },
     not_rendered: { cls: "", label: "Image non générée" }
   };
@@ -442,7 +443,7 @@ dialog.lightbox::backdrop { background: rgba(0, 0, 0, .8); }
   /* ---------- Selection, hash, keyboard ---------- */
   function select(id, fromHash) {
     selectedId = id;
-    if (!fromHash && location.hash !== "#" + id) history.replaceState(null, "", "#" + id);
+    if (!fromHash && location.hash !== "#" + encodeURIComponent(id)) history.replaceState(null, "", "#" + encodeURIComponent(id));
     renderList(); renderDetail();
     var current = document.querySelector('.qitem[aria-current="true"]');
     if (current) current.scrollIntoView({ block: "nearest" });
@@ -464,8 +465,12 @@ dialog.lightbox::backdrop { background: rgba(0, 0, 0, .8); }
   document.getElementById("lightbox").addEventListener("click", function (event) {
     if (event.target === this) this.close();
   });
+  function hashId() {
+    try { return decodeURIComponent(location.hash.slice(1)); }
+    catch (error) { return ""; }
+  }
   window.addEventListener("hashchange", function () {
-    var id = decodeURIComponent(location.hash.slice(1));
+    var id = hashId();
     if (QUESTIONS.some(function (item) { return item.id === id; })) select(id, true);
   });
 
@@ -479,7 +484,7 @@ dialog.lightbox::backdrop { background: rgba(0, 0, 0, .8); }
     return;
   }
   renderFilters();
-  var initial = decodeURIComponent(location.hash.slice(1));
+  var initial = hashId();
   var known = QUESTIONS.some(function (item) { return item.id === initial; });
   select(known ? initial : QUESTIONS[0].id, known);
 })();

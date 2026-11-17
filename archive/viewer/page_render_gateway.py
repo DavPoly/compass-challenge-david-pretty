@@ -16,7 +16,7 @@ from archive.viewer.quote_locate_utils import (
     locate_quote,
 )
 from archive.viewer.viewer_constants import (
-    CROP_MARGIN_PT,
+    CROP_MARGIN_Y_PT,
     CROP_SUFFIX,
     FALLBACK_PAGE_NUMBER,
     FULL_SUFFIX,
@@ -95,21 +95,16 @@ def _draw_boxes(
     return Image.alpha_composite(image.convert("RGBA"), overlay).convert("RGB")
 
 
-def _crop(
-    image: Image.Image, match: QuoteMatch, page_width_pt: float
-) -> Image.Image:
+def _crop(image: Image.Image, match: QuoteMatch) -> Image.Image:
+    """Full-width band around the quote lines."""
     scale = VIEWER_DPI / POINTS_PER_INCH
-    top = min(box.top for box in match.boxes) - CROP_MARGIN_PT
-    bottom = max(box.bottom for box in match.boxes) + CROP_MARGIN_PT
-    left = max(0.0, min(box.x0 for box in match.boxes) - CROP_MARGIN_PT)
-    right = min(
-        page_width_pt, max(box.x1 for box in match.boxes) + CROP_MARGIN_PT
-    )
+    top = min(box.top for box in match.boxes) - CROP_MARGIN_Y_PT
+    bottom = max(box.bottom for box in match.boxes) + CROP_MARGIN_Y_PT
     return image.crop(
         (
-            round(left * scale),
+            0,
             max(0, round(top * scale)),
-            round(right * scale),
+            image.width,
             min(image.height, round(bottom * scale)),
         )
     )
@@ -144,8 +139,9 @@ def render_evidence(
     The first page where the quote is found is drawn with its quote
     lines filled (green when verified, red otherwise) and the value
     outlined darker. Saves ``<out_stem>_page.png`` (full page) and
-    ``<out_stem>_crop.png`` (band around the quote). When the quote is
-    found nowhere, page 1 is saved unmarked and no crop is written.
+    ``<out_stem>_crop.png`` (full-width band around the quote). When
+    the quote is found nowhere, page 1 is saved unmarked and no crop is
+    written.
 
     Args:
         pdf_path: The source PDF.
@@ -172,7 +168,7 @@ def render_evidence(
         page_number, match = found
         page = pdf.pages[page_number - 1]
         image = _draw_boxes(_page_image(page), match, is_verified)
-        crop = _crop(image, match, float(page.width))
+        crop = _crop(image, match)
     crop_path = out_stem.parent / (out_stem.name + CROP_SUFFIX)
     _save(image, full_path)
     _save(crop, crop_path)

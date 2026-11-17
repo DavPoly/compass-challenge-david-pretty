@@ -1,6 +1,8 @@
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -123,6 +125,7 @@ def build(
     renderer: FakeRenderer,
     until_s: float | None = None,
     scores: Path | None = None,
+    now: Callable[[], datetime] = datetime.now,
 ) -> dict[str, object]:
     template = tmp_path / "template.html"
     template.write_text(TEMPLATE, encoding="utf-8")
@@ -134,6 +137,7 @@ def build(
         render=renderer,
         scores_path=scores,
         template_path=template,
+        now=now,
     )
     index = build_viewer(request)
     text = index.read_text(encoding="utf-8")
@@ -165,6 +169,40 @@ def test_happy_path_inlines_parseable_json(tmp_path: Path) -> None:
     assert renderer.calls[0][0] == tmp_path / "corpus" / "d1.pdf"
 
 
+def test_doc_id_with_pdf_suffix_renders_that_corpus_file(
+    tmp_path: Path,
+) -> None:
+    trace = make_trace("q1", ["x"])
+    assert trace.draft is not None
+    trace.draft.evidence[0] = Evidence(doc_id="doc_0001.pdf", quote="x")
+    write_trace(tmp_path / "traces", trace)
+    renderer = FakeRenderer()
+
+    build(tmp_path, renderer)
+
+    expected = (tmp_path / "corpus").resolve() / "doc_0001.pdf"
+    assert renderer.calls[0][0] == expected
+
+
+@pytest.mark.parametrize(
+    "doc_id", ["../../x", "..\\..\\x", "/etc/passwd", "C:/Windows/x"]
+)
+def test_doc_id_outside_corpus_is_not_rendered(
+    tmp_path: Path, doc_id: str
+) -> None:
+    trace = make_trace("q1", ["x"])
+    assert trace.draft is not None
+    trace.draft.evidence[0] = Evidence(doc_id=doc_id, quote="x")
+    write_trace(tmp_path / "traces", trace)
+    renderer = FakeRenderer()
+
+    data = build(tmp_path, renderer)
+
+    assert renderer.calls == []
+    evidence = data["questions"][0]["evidence"][0]  # type: ignore[index]
+    assert evidence["state"] == "not_rendered"
+
+
 def test_unverified_and_not_located_states(tmp_path: Path) -> None:
     trace = make_trace("q1", ["bad", "ok"], unverified=["bad"])
     write_trace(tmp_path / "traces", trace)
@@ -173,6 +211,18 @@ def test_unverified_and_not_located_states(tmp_path: Path) -> None:
 
     states = [e["state"] for e in data["questions"][0]["evidence"]]  # type: ignore[index]
     assert states == ["unverified", "not_located"]
+
+
+def test_missing_grounding_marks_quotes_unchecked(tmp_path: Path) -> None:
+    trace = make_trace("q1", ["a", "b"]).model_copy(update={"grounding": None})
+    write_trace(tmp_path / "traces", trace)
+    renderer = FakeRenderer()
+
+    data = build(tmp_path, renderer)
+
+    states = [e["state"] for e in data["questions"][0]["evidence"]]  # type: ignore[index]
+    assert states == ["unchecked", "unchecked"]
+    assert all(call[2] for call in renderer.calls)
 
 
 def test_renderer_exception_gives_not_rendered(
@@ -197,6 +247,17 @@ def test_exhausted_budget_skips_rendering(tmp_path: Path) -> None:
     assert renderer.calls == []
     evidence = data["questions"][0]["evidence"][0]  # type: ignore[index]
     assert evidence["state"] == "not_rendered"
+
+
+def test_generated_at_uses_injected_clock(tmp_path: Path) -> None:
+    write_trace(tmp_path / "traces", make_trace("q1"))
+    fixed = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+
+    data = build(tmp_path, FakeRenderer(), now=lambda: fixed)
+
+    assert data["generated_at"] == fixed.astimezone().isoformat(
+        timespec="seconds"
+    )
 
 
 def test_scores_give_accuracy_by_confidence(tmp_path: Path) -> None:

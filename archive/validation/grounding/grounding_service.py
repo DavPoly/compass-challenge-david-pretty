@@ -10,7 +10,11 @@ from collections.abc import Iterable
 
 from archive.common.text.date_parsing_constants import DAY_FIRST_DATE_RE
 from archive.common.text.date_parsing_utils import build_iso_date
-from archive.common.text.text_normalize_utils import normalize_for_match
+from archive.common.text.quote_match_utils import (
+    fold_text,
+    is_quote_in_text,
+    quote_pieces,
+)
 from archive.validation.answer_model import (
     AnswerStatus,
     DraftAnswer,
@@ -25,14 +29,10 @@ from archive.validation.answer_validator import (
 from archive.validation.grounding.grounding_constants import (
     BARE_AMOUNT_SUFFIX,
     DATE_SCAN_PATTERNS,
-    ELLIPSIS_RE,
     ISSUE_NO_EVIDENCE,
     ISSUE_QUOTE_UNVERIFIED,
     ISSUE_VALUE_UNGROUNDED,
-    MIN_QUOTE_PIECE_LENGTH,
-    PUNCTUATION_FOLD,
     TRAILING_PUNCTUATION,
-    WHITESPACE_RE,
 )
 from archive.validation.grounding.grounding_model import (
     Confidence,
@@ -43,51 +43,12 @@ from archive.validation.issue_model import IssueCode, ValidationIssue
 from archive.validation.validation_constants import AMOUNT_RE
 
 
-def _fold(text: str) -> str:
-    """Case, accent, whitespace and typographic punctuation folded."""
-    plain = normalize_for_match(text.translate(PUNCTUATION_FOLD))
-    return WHITESPACE_RE.sub(" ", plain).strip()
-
-
-def _quote_pieces(quote: str) -> list[str]:
-    """Folded pieces of a quote split on ellipsis markers.
-
-    Tiny pieces are dropped only when a long enough piece remains;
-    a quote of tiny pieces only yields no piece.
-    """
-    parts = ELLIPSIS_RE.split(quote)
-    pieces = [piece for piece in map(_fold, parts) if piece]
-    if len(parts) == 1:
-        return pieces
-    return [piece for piece in pieces if len(piece) >= MIN_QUOTE_PIECE_LENGTH]
-
-
-def _has_pieces_in_order(pieces: list[str], text: str) -> bool:
-    position = 0
-    for piece in pieces:
-        found = text.find(piece, position)
-        if found < 0:
-            return False
-        position = found + len(piece)
-    return True
-
-
-def _is_quote_in_text(pieces: list[str], text: str) -> bool:
-    folded = _fold(text)
-    if _has_pieces_in_order(pieces, folded):
-        return True
-    compact = WHITESPACE_RE.sub("", folded)
-    return _has_pieces_in_order(
-        [WHITESPACE_RE.sub("", piece) for piece in pieces], compact
-    )
-
-
 def _is_verified(evidence: Evidence, sources: GroundingSources) -> bool:
-    pieces = _quote_pieces(evidence.quote)
+    pieces = quote_pieces(evidence.quote)
     if not pieces:
         return False
     texts = sources.texts_by_doc.get(normalize_doc_id(evidence.doc_id), ())
-    return any(_is_quote_in_text(pieces, text) for text in texts)
+    return any(is_quote_in_text(pieces, text) for text in texts)
 
 
 def _amount_key(text: str) -> str | None:
@@ -124,7 +85,7 @@ def _scan_keys(folded: str) -> set[str]:
 
 def _is_grounded(item: str, haystacks: list[str]) -> bool:
     trimmed = item.strip().rstrip(TRAILING_PUNCTUATION)
-    folded = _fold(trimmed)
+    folded = fold_text(trimmed)
     if any(folded in haystack for haystack in haystacks):
         return True
     item_keys = {
@@ -141,15 +102,15 @@ def _is_grounded(item: str, haystacks: list[str]) -> bool:
 def _answer_items(draft: DraftAnswer) -> list[str]:
     raw = draft.answer
     items = raw if isinstance(raw, list) else [raw]
-    return [item for item in items if _fold(item)]
+    return [item for item in items if fold_text(item)]
 
 
 def _ungrounded_values(
     draft: DraftAnswer, verified: list[Evidence], sources: GroundingSources
 ) -> list[str]:
-    haystacks = [_fold(evidence.quote) for evidence in verified]
+    haystacks = [fold_text(evidence.quote) for evidence in verified]
     if sources.note:
-        haystacks.append(_fold(sources.note))
+        haystacks.append(fold_text(sources.note))
     return [
         item
         for item in _answer_items(draft)

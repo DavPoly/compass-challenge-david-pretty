@@ -4,7 +4,7 @@ from pathlib import Path
 
 VIEWER_DPI = 110
 POINTS_PER_INCH = 72
-CROP_MARGIN_PT = 36.0
+CROP_MARGIN_Y_PT = 36.0
 FALLBACK_PAGE_NUMBER = 1
 FULL_SUFFIX = "_page.png"
 CROP_SUFFIX = "_crop.png"
@@ -53,6 +53,9 @@ REASON_BY_ISSUE_CODE = {
 REASON_EVIDENCE_INSUFFICIENT = "brouillon jugé insuffisant par le modèle"
 
 LOG_TRACE_SKIPPED = "viewer: skipping unreadable trace %s"
+LOG_DOC_OUTSIDE_CORPUS = (
+    "viewer: doc id %r is outside the corpus, not rendered"
+)
 LOG_RENDER_FAILED = "viewer: cannot render evidence %s of question %s"
 LOG_BUDGET_EXHAUSTED = "viewer: time budget exhausted, text-only evidence"
 LOG_SCORES_UNUSABLE = "viewer: scores file %s unusable, page is unscored"

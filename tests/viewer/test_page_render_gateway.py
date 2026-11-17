@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pdfplumber
 import pytest
+from PIL import Image
 
 from archive.validation.answer_model import Evidence
 from archive.viewer.page_render_gateway import render_evidence
@@ -27,6 +28,12 @@ def test_located_quote_writes_crop_and_full_page(tmp_path: Path) -> None:
     assert result.page is not None
     assert result.crop_path is not None and result.crop_path.exists()
     assert result.full_path is not None and result.full_path.exists()
+    with (
+        Image.open(result.crop_path) as crop,
+        Image.open(result.full_path) as full,
+    ):
+        assert crop.width == full.width
+        assert crop.height < full.height
 
 
 def test_unlocated_quote_falls_back_to_first_page(tmp_path: Path) -> None:

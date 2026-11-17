@@ -6,14 +6,16 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
 from pydantic import ValidationError
 
+from archive.common.constants import PDF_SUFFIX
 from archive.pipeline.pipeline_constants import TRACE_SUFFIX
 from archive.pipeline.trace_gateway import trace_filename
 from archive.pipeline.trace_model import QuestionTrace, RetrievedChunk
 from archive.validation.answer_model import Evidence
+from archive.validation.answer_validator import normalize_doc_id
 from archive.viewer.viewer_constants import (
     ACCURACY_DECIMALS,
     CONFIDENCE_LABELS,
@@ -23,6 +25,7 @@ from archive.viewer.viewer_constants import (
     INDEX_FILENAME,
     ISSUE_SEPARATOR,
     LOG_BUDGET_EXHAUSTED,
+    LOG_DOC_OUTSIDE_CORPUS,
     LOG_RENDER_FAILED,
     LOG_SCORES_UNUSABLE,
     LOG_TRACE_SKIPPED,
@@ -55,6 +58,7 @@ from archive.viewer.viewer_model import (
 logger = logging.getLogger(__name__)
 
 Answer = str | list[str]
+Verdict = Literal["verified", "unverified", "unchecked"]
 
 
 @dataclass(frozen=True)
@@ -104,6 +108,7 @@ class ViewerRequest:
     render: EvidenceRenderer
     scores_path: Path | None = None
     template_path: Path = TEMPLATE_PATH
+    now: Callable[[], datetime] = datetime.now
 
 
 @dataclass(frozen=True)
@@ -121,8 +126,8 @@ def build_viewer(request: ViewerRequest) -> Path:
     correctness and the summary an accuracy per confidence label.
 
     A quote is "verified" unless the grounding report lists it as
-    unverified; a trace without grounding report has nothing flagged, so
-    its quotes are treated as verified.
+    unverified; when a draft has no grounding report (the check
+    crashed), its quotes are "unchecked" rather than verified.
 
     Returns:
         Path of the written ``index.html``.
@@ -136,19 +141,27 @@ def build_viewer(request: ViewerRequest) -> Path:
     scores = _load_scores(request.scores_path)
     request.out_dir.mkdir(parents=True, exist_ok=True)
     traces = _load_traces(request.trace_dir)
-    questions = [_question_view(t, request, scores) for t in traces]
-    data = ViewerData(
-        run_id=traces[0].run_id if traces else "",
-        generated_at=datetime.now().astimezone().isoformat(timespec="seconds"),
-        is_scored=scores is not None,
-        summary=_summary(questions, scores is not None),
-        questions=questions,
-    )
+    data = _make_viewer_data(traces, scores, request)
     page = _embed(template, data, request.template_path)
     target = request.out_dir / INDEX_FILENAME
     target.write_text(page, encoding=VIEWER_ENCODING)
     logger.info(LOG_VIEWER_WRITTEN, target)
     return target
+
+
+def _make_viewer_data(
+    traces: list[QuestionTrace],
+    scores: dict[str, _Score] | None,
+    request: ViewerRequest,
+) -> ViewerData:
+    questions = [_question_view(t, request, scores) for t in traces]
+    return ViewerData(
+        run_id=traces[0].run_id if traces else "",
+        generated_at=request.now().astimezone().isoformat(timespec="seconds"),
+        is_scored=scores is not None,
+        summary=_summary(questions, scores is not None),
+        questions=questions,
+    )
 
 
 def _read_template(path: Path) -> str:
@@ -283,7 +296,7 @@ def _evidence_views(
     return [
         _evidence_view(
             evidence,
-            evidence.quote not in unverified,
+            _verdict(trace, evidence, unverified),
             pages_dir / f"{stem_base}_{index}",
             request,
         )
@@ -291,16 +304,25 @@ def _evidence_views(
     ]
 
 
+def _verdict(
+    trace: QuestionTrace, evidence: Evidence, unverified: set[str]
+) -> Verdict:
+    if trace.grounding is None:
+        return "unchecked"
+    return "unverified" if evidence.quote in unverified else "verified"
+
+
 def _evidence_view(
     evidence: Evidence,
-    is_verified: bool,
+    verdict: Verdict,
     out_stem: Path,
     request: ViewerRequest,
 ) -> EvidenceView:
+    is_verified = verdict != "unverified"
     rendered = _try_render(evidence, is_verified, out_stem, request)
     state: EvidenceState
-    if not is_verified:
-        state = "unverified"
+    if verdict != "verified":
+        state = verdict
     elif rendered is None:
         state = "not_rendered"
     else:
@@ -329,16 +351,26 @@ def _try_render(
     if not request.budget.has_time():
         logger.info(LOG_BUDGET_EXHAUSTED)
         return None
-    pdf_path = request.corpus_dir / f"{evidence.doc_id}.pdf"
+    pdf_path = _corpus_pdf(request.corpus_dir, evidence.doc_id)
+    if pdf_path is None:
+        logger.warning(LOG_DOC_OUTSIDE_CORPUS, evidence.doc_id)
+        return None
     try:
         return request.render(pdf_path, evidence, is_verified, out_stem)
-    except (
-        Exception
-    ):  # renderer is a boundary: one bad PDF must not stop the page
+    # The renderer is a boundary: one bad PDF must not stop the page.
+    except Exception:  # noqa: BLE001
         logger.warning(
             LOG_RENDER_FAILED, evidence.doc_id, out_stem.name, exc_info=True
         )
         return None
+
+
+def _corpus_pdf(corpus_dir: Path, doc_id: str) -> Path | None:
+    """PDF of a cited doc id, or None when it escapes the corpus."""
+    name = f"{normalize_doc_id(doc_id)}{PDF_SUFFIX}"
+    root = corpus_dir.resolve()
+    pdf_path = (root / name).resolve()
+    return pdf_path if pdf_path.is_relative_to(root) else None
 
 
 def _relative(path: Path | None, request: ViewerRequest) -> str | None:
