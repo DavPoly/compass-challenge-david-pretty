@@ -17,7 +17,10 @@ from archive.agent.route.route_model import (
 from archive.common.chunk_model import Chunk, ChunkKind
 from archive.llm.llm_gateway import LlmGateway, LlmUnavailableError, Messages
 from archive.retrieval.search_service import SearchFilters, SearchHit
-from archive.validation.answer_model import AnswerStatus
+from archive.validation.answer_model import AnswerStatus, FinalAnswer
+from archive.validation.answer_validator import ValidationResult
+from archive.validation.grounding.grounding_model import GroundingSources
+from archive.validation.grounding.grounding_service import check_grounding
 from archive.validation.input_model import Question
 
 QUESTION = Question(id="q1", question="Total facture ?")
@@ -159,6 +162,31 @@ def test_sums_client_invoices_exactly_in_both_languages() -> None:
     assert result.draft.evidence_sufficient
     assert result.draft.evidence[1].quote == "Sous-total : 47 375,20 $"
     assert result.draft.evidence[1].value == "47375.20"
+
+
+def _ungrounded(
+    result: RecipeResult, hits: list[SearchHit], note: str | None
+) -> list[str]:
+    assert result.draft is not None
+    texts = {hit.chunk.doc_id: [hit.chunk.text] for hit in hits}
+    validation = ValidationResult(
+        answer=FinalAnswer.not_found("q"), issues=[], dropped_citations=[]
+    )
+    report = check_grounding(
+        result.draft, GroundingSources(texts, note), validation
+    )
+    return report.ungrounded_values
+
+
+def test_note_carries_the_sum_so_the_total_is_grounded() -> None:
+    hits = [invoice("d1", CODE, "0,10"), invoice("d2", CODE, "47 375,20")]
+
+    result = _run(_plan(client="Ville de Val"), hits)
+
+    assert result is not None
+    assert result.note == "Sum of the matching invoices: 47375.30."
+    assert _ungrounded(result, hits, result.note) == []
+    assert _ungrounded(result, hits, None) == ["47375.30"]
 
 
 def test_decimal_sum_has_no_float_drift() -> None:
