@@ -30,3 +30,13 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+norecursedirs = [
+    "*.egg",
+    ".*",
+    "_darcs",
+    "CVS",
+    "dist",
+    "node_modules",
+    "venv",
+    "{arch}",
+]
