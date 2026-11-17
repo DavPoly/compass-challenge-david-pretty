@@ -23,6 +23,7 @@ from archive.viewer.viewer_constants import (
     DATA_PLACEHOLDER,
     IGNORED_ISSUE_CODES,
     INDEX_FILENAME,
+    INLINE_ASSETS,
     ISSUE_SEPARATOR,
     LOG_BUDGET_EXHAUSTED,
     LOG_DOC_OUTSIDE_CORPUS,
@@ -30,6 +31,7 @@ from archive.viewer.viewer_constants import (
     LOG_SCORES_UNUSABLE,
     LOG_TRACE_SKIPPED,
     LOG_VIEWER_WRITTEN,
+    MSG_ASSET_MISSING,
     MSG_PLACEHOLDER_MISSING,
     MSG_TEMPLATE_MISSING,
     PAGES_DIRNAME,
@@ -166,10 +168,24 @@ def _make_viewer_data(
 
 def _read_template(path: Path) -> str:
     try:
-        return path.read_text(encoding=VIEWER_ENCODING)
+        template = path.read_text(encoding=VIEWER_ENCODING)
     except FileNotFoundError as error:
         raise FileNotFoundError(
             MSG_TEMPLATE_MISSING.format(path=path)
+        ) from error
+    for token, filename in INLINE_ASSETS:
+        if token in template:
+            asset = _read_asset(path.parent / filename, token)
+            template = template.replace(token, asset, 1)
+    return template
+
+
+def _read_asset(path: Path, token: str) -> str:
+    try:
+        return path.read_text(encoding=VIEWER_ENCODING)
+    except FileNotFoundError as error:
+        raise FileNotFoundError(
+            MSG_ASSET_MISSING.format(path=path, token=token)
         ) from error
 
 
