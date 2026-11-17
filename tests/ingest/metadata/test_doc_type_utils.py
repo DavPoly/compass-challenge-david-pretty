@@ -53,13 +53,26 @@ def test_each_family_is_recognized(header: str, expected: DocType) -> None:
         ("Tcchnical note — Geotechnical", DocType.TECHNICAL_NOTE),
         ("Reunion de chantier n° 3", DocType.MINUTES),
         ("BRUEVAL Monthly — issue 3", DocType.NEWSLETTER),
-        ("Politiquc de télétravail", DocType.POLICY),
+        ("Staff directoy — Brumeval", DocType.DIRECTORY),
     ],
 )
 def test_header_typos_and_accents_are_tolerated(
     header: str, expected: DocType
 ) -> None:
     assert detect_doc_type(header) is expected
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        "Contact : Jean Dupont",
+        "Police d assurance",
+        "Rapport annuel 2023",
+        "Contracted works",
+    ],
+)
+def test_single_word_phrases_do_not_match_similar_words(header: str) -> None:
+    assert detect_doc_type(header) is DocType.UNKNOWN
 
 
 def test_boilerplate_lines_before_the_title_are_skipped() -> None:
