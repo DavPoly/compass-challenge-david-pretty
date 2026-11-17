@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
 
-from archive.agent.answer_service import answer_question
+from archive.agent.answer_service import DraftOutcome, answer_question
 from archive.common.config import AppConfig
 from archive.common.constants import PDF_GLOB
 from archive.ingest.build.index_sync_service import sync_index
@@ -24,6 +24,8 @@ from archive.pipeline.pipeline_constants import (
     LOG_DENSE_UNAVAILABLE,
     LOG_DOC_IDS_DIFFER,
     LOG_DROPPED_CITATIONS,
+    LOG_GROUNDING_CONFIDENCE,
+    LOG_GROUNDING_FAILED,
     LOG_LATE_RESULT,
     LOG_LLM_UNAVAILABLE,
     LOG_MODELS_ACTIVE,
@@ -53,7 +55,9 @@ from archive.retrieval.models.rerank_gateway import (
 from archive.retrieval.qdrant.qdrant_gateway import IndexOpenError
 from archive.retrieval.search_service import SearchService
 from archive.validation.answer_model import FinalAnswer
-from archive.validation.answer_validator import validate
+from archive.validation.answer_validator import ValidationResult, validate
+from archive.validation.grounding.grounding_model import GroundingSources
+from archive.validation.grounding.grounding_service import check_grounding
 from archive.validation.input_model import (
     Question,
     QuestionsFileError,
@@ -121,13 +125,11 @@ def _answer_question(question: Question, context: RunContext) -> FinalAnswer:
     if not question.is_valid:
         logger.warning(LOG_QUESTION_INVALID, question.id, question.error)
         return FinalAnswer.not_found(question.id)
-    drafted, retrieved_ids = answer_question(
-        question, context.search, context.llm
-    )
+    outcome = answer_question(question, context.search, context.llm)
     result = validate(
         question.id,
-        drafted,
-        retrieved_ids,
+        outcome.draft,
+        outcome.doc_ids,
         context.valid_doc_ids,
     )
     for issue in result.issues:
@@ -136,7 +138,24 @@ def _answer_question(question: Question, context: RunContext) -> FinalAnswer:
         logger.warning(
             LOG_DROPPED_CITATIONS, question.id, result.dropped_citations
         )
+    try:
+        _log_grounding(question.id, outcome, result)
+    except Exception:  # broad catch at a boundary: flag-only, never fatal
+        logger.exception(LOG_GROUNDING_FAILED, question.id)
     return result.answer
+
+
+def _log_grounding(
+    question_id: str, outcome: DraftOutcome, result: ValidationResult
+) -> None:
+    report = check_grounding(
+        outcome.draft,
+        GroundingSources.from_hits(outcome.hits, outcome.note),
+        result,
+    )
+    for issue in report.issues:
+        logger.info(LOG_QUESTION_ISSUE, question_id, issue)
+    logger.info(LOG_GROUNDING_CONFIDENCE, question_id, report.confidence)
 
 
 def _work(

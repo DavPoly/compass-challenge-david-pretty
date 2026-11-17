@@ -1,0 +1,47 @@
+"""Constants of the grounding check."""
+
+import re
+
+from archive.common.text.date_parsing_constants import (
+    DAY_FIRST_DATE_RE,
+    DAY_MONTH_NAME_RE,
+    ISO_DATE_RE,
+    MONTH_NAME_DAY_RE,
+)
+
+DATE_SCAN_PATTERNS: tuple[re.Pattern[str], ...] = (
+    ISO_DATE_RE,
+    DAY_FIRST_DATE_RE,
+    DAY_MONTH_NAME_RE,
+    MONTH_NAME_DAY_RE,
+)
+# Lets a bare number such as "12500" parse as a currency amount.
+BARE_AMOUNT_SUFFIX = " $"
+TRAILING_PUNCTUATION = ".,;:"
+PUNCTUATION_FOLD = str.maketrans(
+    {
+        "’": "'",
+        "‘": "'",
+        "ʼ": "'",
+        "«": '"',
+        "»": '"',
+        "“": '"',
+        "”": '"',
+        "„": '"',
+        "–": "-",
+        "—": "-",
+    }
+)
+WHITESPACE_RE = re.compile(r"\s+")
+# Marks where a quote elides text: "...", the ellipsis character, "[...]".
+ELLIPSIS_RE = re.compile(r"\[\s*(?:\.{3}|…)\s*\]|\.{3,}|…")
+# Quote pieces shorter than this are ignored beside a longer piece.
+MIN_QUOTE_PIECE_LENGTH = 8
+
+ISSUE_QUOTE_UNVERIFIED = (
+    "quote for {doc_id} not found in its retrieved text: {quote!r}"
+)
+ISSUE_VALUE_UNGROUNDED = (
+    "answer value {value!r} not found in any verified quote or note"
+)
+ISSUE_NO_EVIDENCE = "status {status} has no evidence quote"

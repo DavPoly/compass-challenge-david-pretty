@@ -18,6 +18,7 @@ from archive.agent.recipes.invoice_parsing_utils import (
 )
 from archive.agent.recipes.recipe_constants import (
     AGG_LIST_CAP,
+    AGGREGATION_NOTE_TEMPLATE,
     AMOUNT_FORMAT,
     CHUNK_ID_SEPARATOR,
     EXTRACT_SYSTEM_PROMPT,
@@ -394,4 +395,5 @@ def run_aggregation(
     )
     draft = _build_draft(summed, sheet_evidence, is_complete)
     hits = [invoice.hit for invoice in invoices] + scope.sheets
-    return RecipeResult(hits=hits, draft=draft)
+    note = AGGREGATION_NOTE_TEMPLATE.format(total=draft.answer)
+    return RecipeResult(hits=hits, draft=draft, note=note)

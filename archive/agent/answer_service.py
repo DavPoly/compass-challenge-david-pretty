@@ -1,7 +1,7 @@
 """Answer one question: plan, run a recipe or retrieve, then draft."""
 
 import time
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from archive.agent.draft_service import draft
 from archive.agent.hops.hop_model import HopPolicy
@@ -20,13 +20,28 @@ from archive.validation.answer_model import DraftAnswer
 from archive.validation.input_model import Question
 
 
+@dataclass(frozen=True)
+class DraftOutcome:
+    """A draft with the hits it relied on and the recipe note."""
+
+    draft: DraftAnswer
+    hits: list[SearchHit]
+    note: str | None
+
+    @property
+    def doc_ids(self) -> set[str]:
+        """Doc ids of the hits the draft relied on."""
+        return _doc_ids(self.hits)
+
+
 def answer_question(
     question: Question, search: RecipeSearchPort, llm: LlmGateway
-) -> tuple[DraftAnswer, set[str]]:
-    """Return the draft answer and the doc ids it was drafted from.
+) -> DraftOutcome:
+    """Return the draft answer, its hits and the recipe note.
 
-    On the draft path these are the hits that reached the prompt; a
-    recipe that drafts itself keeps all its hits. An insufficient
+    On the draft path the hits are those that reached the prompt (plus
+    any safety-net hop hits); a recipe that drafts itself keeps all
+    its hits. The note is the recipe note, None otherwise. An insufficient
     draft that names what is missing gets one safety-net hop.
 
     Raises:
@@ -43,7 +58,7 @@ def answer_question(
         else:
             result = RecipeResult(hits=hits)
     if result.draft is not None:
-        return result.draft, _doc_ids(result.hits)
+        return DraftOutcome(result.draft, result.hits, result.note)
     return _draft_with_safety_net(question, result, search, llm, started_s)
 
 
@@ -53,7 +68,7 @@ def _draft_with_safety_net(  # noqa: PLR0913 - one value per input
     search: RecipeSearchPort,
     llm: LlmGateway,
     started_s: float,
-) -> tuple[DraftAnswer, set[str]]:
+) -> DraftOutcome:
     """Draft from a recipe result; hop once more on a named gap.
 
     The first draft uses the top `MAX_PROMPT_CHUNKS` hits and the
@@ -62,7 +77,7 @@ def _draft_with_safety_net(  # noqa: PLR0913 - one value per input
     from `started_s`, the clock reading when the question began.
 
     Returns:
-        The final draft and the doc ids of every hit that was used.
+        The final draft, every hit that was used and the recipe note.
 
     Raises:
         LlmUnavailableError: the LLM could not give a valid draft.
@@ -70,7 +85,7 @@ def _draft_with_safety_net(  # noqa: PLR0913 - one value per input
     prompt_hits = result.hits[:MAX_PROMPT_CHUNKS]
     drafted = draft(question, prompt_hits, llm, note=result.note)
     if not needs_follow_up(drafted):
-        return drafted, _doc_ids(prompt_hits)
+        return DraftOutcome(drafted, prompt_hits, result.note)
     policy = replace(HopPolicy.safety_net(), started_s=started_s)
     hopped = run_hops(
         question,
@@ -82,7 +97,7 @@ def _draft_with_safety_net(  # noqa: PLR0913 - one value per input
         note=result.note,
     )
     final = hopped.draft if hopped.draft is not None else drafted
-    return final, _doc_ids(prompt_hits) | _doc_ids(hopped.hits)
+    return DraftOutcome(final, prompt_hits + hopped.hits, result.note)
 
 
 def _doc_ids(hits: list[SearchHit]) -> set[str]:
