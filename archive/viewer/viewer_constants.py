@@ -4,7 +4,7 @@ from pathlib import Path
 
 VIEWER_DPI = 110
 POINTS_PER_INCH = 72
-CROP_MARGIN_PT = 36.0
+CROP_MARGIN_Y_PT = 36.0
 FALLBACK_PAGE_NUMBER = 1
 FULL_SUFFIX = "_page.png"
 CROP_SUFFIX = "_crop.png"
