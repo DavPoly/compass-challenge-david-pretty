@@ -1,6 +1,6 @@
 # Plan: step 03, dense retrieval and reranking (`impl-03-dense-rerank`)
 
-**Status:** in-progress
+**Status:** done
 **Parent:** `.plans/impl-00-roadmap.md` step 03, `.plans/global-architecture.md` §2
 **BASE:** 9cd9bcd7a9e91e58ee90cc986054601d5de7bbb6
 **Orchestrator branch B:** `feat/dense-rerank`, cut from `main` @ b298d6b. Its
@@ -295,16 +295,38 @@ Environment note, flagged unverified: the first two reranker runs
 left a Store-python 3.11 child under the venv launcher; the wedge
 root cause is unresolved.
 
+## Step 03 verification (2026-11-17)
+
+- V fallback: empty cache + HF_HUB_OFFLINE=1 → exit 0, one warning
+  per layer (LOG_MODEL_FAILED then LOG_DENSE_UNAVAILABLE), BM25-only
+  run, 20/20 lines, statuses 11 answered / 8 not_found / 1 conflict.
+- V sync budget: 20 added docs on a %TEMP% index copy with
+  SYNC_DENSE_BUDGET_S=0.001 → SyncReport sparse_only=20; scroll
+  confirmed all new points sparse-only; the new doc retrievable by
+  BM25 at the identical score of its indexed twin (32.8202).
+- Timing: cold startup 19.8 s (includes the 0.24 GB MiniLM
+  download), warm 16.8 s, second warm 4.5 s; no-op sync 2.1 s.
+- Score (user run, dense on, rerank off): 33.30/45 — equal to the
+  step-02 baseline, acceptance ≥ 33.30 met. Exactitude 20.62/30
+  (11/16), fiabilité 9.15/10 (4/4 statuses, 5 unjustified
+  abstentions), citations 3.53/5. direct 6/6, aggregation 2/3,
+  superseded 3/3, conflict 1/1, unanswerable 3/3, multi_hop 0/4.
+- Reading: retrieval measurably improved (recall@16 0.79 → 0.82
+  samples, 0.80 → 0.87 paraphrase, any 16/17 → 17/17) but the score
+  is capped by the five questions needing steps 04/05 logic:
+  multi_hop s04/s05/s08/s15 and s20 (17-gold-doc aggregation,
+  recall 0.06@16 even with dense — needs decomposition, not
+  better vectors).
+
 ## Resume point
 
-2026-11-17, T4 complete on `feat/dense-rerank`: index rebuilt with
-dense (ae81e80) and measured, dense enabled (samples 0.82 @16,
-paraphrase 0.87, up from 0.79/0.80 BM25), reranker left off because
-both candidates cost 20-140 s per query on this CPU-only box.
-Checks green, 463 tests. Remaining: V verification (fallback with
-HF_HUB_OFFLINE=1 and an empty cache: BM25-only warning and exit 0;
-sync budget on a %TEMP% copy with 20 PDFs and a tiny
-SYNC_DENSE_BUDGET_S: sparse_only; timing), then the user's score
-run against 33.30, then close step 03 and merge to main on
-approval. Also open: the global-deadline pipeline test flakes on a
-cold cache (passes warm) — needs a fix round.
+2026-11-17, step 03 done. All tasks merged on `feat/dense-rerank`:
+hybrid BM25 + dense MiniLM RRF search (recall@16 0.82 samples /
+0.87 paraphrase), rerank wired but disabled (RERANK_ENABLED=False;
+both rerankers CPU-dead — jina ≈20–35 s/question + 11.8 GB,
+bge-int8 105–140 s/query), index rebuilt with dense (storage.sqlite
+24.4 MB), 463 tests, four checks green, V verified (fallback, sync
+budget, timing), score 33.30/45. Nothing pushed. Next: merge to
+`main` on approval, then step 04 (router/recipes) and 05 (ReAct)
+for the multi_hop/aggregation gap; 06 and 08 stay must-haves before
+the Wed 12:00 deadline.
