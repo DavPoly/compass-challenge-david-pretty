@@ -114,3 +114,13 @@ def test_messages_delimit_the_question() -> None:
     assert user.startswith("<question>\nTotal ")
     assert user.rstrip().endswith("</question>")
     assert user.count("</question>") == 1
+
+
+def test_system_prompt_sends_non_money_questions_to_direct() -> None:
+    llm = FakeLlm(QuestionPlan(family=QuestionFamily.DIRECT))
+
+    _plan(llm)
+
+    system = llm.calls[0][0]["content"]
+    assert "hours" in system
+    assert "never aggregation" in system

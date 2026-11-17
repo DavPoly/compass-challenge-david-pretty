@@ -39,6 +39,9 @@ EXTRACT_USER_PROMPT = "Documents:\n{documents}\n"
 LOG_AGGREGATION = (
     "question %s aggregation: %d invoices listed, %d matched, %d regex misses"
 )
+LOG_NO_MEASURE = (
+    "question %s aggregation: no money measure, using the direct path"
+)
 LOG_EXTRACT_UNAVAILABLE = (
     "question %s aggregation: amount extraction failed, skipping %d docs"
 )

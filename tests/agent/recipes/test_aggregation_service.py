@@ -121,7 +121,11 @@ class FakeLlm:
 
 def _plan(**fields: object) -> QuestionPlan:
     return QuestionPlan.model_validate(
-        {"family": QuestionFamily.AGGREGATION, **fields}
+        {
+            "family": QuestionFamily.AGGREGATION,
+            "measure": AmountMeasure.PRE_TAX,
+            **fields,
+        }
     )
 
 
@@ -178,10 +182,16 @@ def test_tax_included_measure_sums_the_total() -> None:
     assert result.draft.evidence[0].quote == "TOTAL : 114,98 $"
 
 
-def test_default_measure_is_pre_tax() -> None:
-    hits = [invoice("d1", CODE, "100,00", tot="114,98")]
+def test_missing_measure_defers_to_direct_without_listing() -> None:
+    search = FakeSearch([invoice("d1", CODE, "100,00")])
+    plan = _plan(project_codes=[CODE], measure=None)
 
-    assert _answer(_run(_plan(project_codes=[CODE]), hits)) == "100.00"
+    result = run_aggregation(
+        QUESTION, plan, search, cast(LlmGateway, FakeLlm())
+    )
+
+    assert result is None
+    assert search.filters == []
 
 
 def test_no_narrowing_entity_defers_to_direct() -> None:
