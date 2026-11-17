@@ -133,6 +133,8 @@ def _clear_previous_index(index_dir: Path) -> None:
 
 def parse_all(paths: list[Path], workers: int | None) -> Iterator[ParsedFile]:
     """Parse PDFs in worker processes, yielding results in path order."""
+    if not paths:
+        return
     with ProcessPoolExecutor(max_workers=workers) as executor:
         yield from executor.map(
             parse_file, paths, chunksize=BUILD_MAP_CHUNKSIZE
