@@ -14,6 +14,9 @@ class IssueCode(StrEnum):
     NO_VALID_CITATION = "no_valid_citation"
     CONFLICT_CITATIONS = "conflict_citations"
     NOT_FOUND_CLEARED = "not_found_cleared"
+    QUOTE_UNVERIFIED = "quote_unverified"
+    VALUE_UNGROUNDED = "value_ungrounded"
+    NO_EVIDENCE = "no_evidence"
 
 
 class ValidationIssue(BaseModel):
