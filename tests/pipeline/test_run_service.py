@@ -28,6 +28,7 @@ from archive.ingest.build.index_builder_service import (
 )
 from archive.llm.llm_gateway import LlmUnavailableError, Messages
 from archive.pipeline import run_service
+from archive.pipeline.engine import engine_service
 from archive.pipeline.pipeline_constants import (
     EXIT_ERROR,
     EXIT_OK,
@@ -78,6 +79,7 @@ class StubContext:
     deadline_s = QUESTION_BUDGET_S
     run_id = ""
     traces = None
+    engine = None
 
     def clock(self) -> float:
         return 0.0
@@ -141,7 +143,7 @@ def indexed(
 @pytest.fixture
 def fake_llm(monkeypatch: pytest.MonkeyPatch) -> FakeLlm:
     llm = FakeLlm()
-    monkeypatch.setattr(run_service, "LlmGateway", lambda config: llm)
+    monkeypatch.setattr(engine_service, "LlmGateway", lambda config: llm)
     return llm
 
 
@@ -239,7 +241,7 @@ def test_grounding_failure_leaves_the_answer_line_unchanged(
     def broken(*args: object, **kwargs: object) -> None:
         raise RuntimeError("grounding bug")
 
-    monkeypatch.setattr(run_service, "check_grounding", broken)
+    monkeypatch.setattr(engine_service, "check_grounding", broken)
 
     with caplog.at_level(logging.INFO):
         code = run_service.run(questions, answers, config)
@@ -294,7 +296,7 @@ def test_llm_unavailable_gives_not_found(
     tmp_path: Path,
 ) -> None:
     llm = FakeLlm(LlmUnavailableError("down"))
-    monkeypatch.setattr(run_service, "LlmGateway", lambda config: llm)
+    monkeypatch.setattr(engine_service, "LlmGateway", lambda config: llm)
     config, query = indexed
     questions = write_questions(
         tmp_path / "q.jsonl", [{"id": "q1", "question": query}]
@@ -314,7 +316,7 @@ def test_unexpected_error_is_contained_per_question(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     llm = FakeLlm(RuntimeError("boom"))
-    monkeypatch.setattr(run_service, "LlmGateway", lambda config: llm)
+    monkeypatch.setattr(engine_service, "LlmGateway", lambda config: llm)
     config, query = indexed
     questions = write_questions(
         tmp_path / "q.jsonl", [{"id": "q1", "question": query}]
@@ -423,7 +425,7 @@ def test_unusable_index_after_failed_sync_exits_one(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(run_service, "sync_index", failing_sync)
+    monkeypatch.setattr(engine_service, "sync_index", failing_sync)
     config = AppConfig(
         "u", "k", "m", indexed[0].corpus_dir, tmp_path / "no_index"
     )
@@ -455,7 +457,7 @@ def test_failed_sync_continues_on_the_existing_index(
     caplog: pytest.LogCaptureFixture,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(run_service, "sync_index", failing_sync)
+    monkeypatch.setattr(engine_service, "sync_index", failing_sync)
     config, query = indexed
     questions = write_questions(
         tmp_path / "q.jsonl", [{"id": "q", "question": query}]
@@ -478,7 +480,7 @@ def test_unexpected_sync_error_continues_on_the_existing_index(
     def broken_sync(*_args: object, **_kwargs: object) -> None:
         raise RuntimeError("pool died")
 
-    monkeypatch.setattr(run_service, "sync_index", broken_sync)
+    monkeypatch.setattr(engine_service, "sync_index", broken_sync)
     config, query = indexed
     questions = write_questions(
         tmp_path / "q.jsonl", [{"id": "q", "question": query}]
@@ -580,7 +582,7 @@ def test_citation_outside_the_corpus_is_dropped(
         return [hit for hit in hits if hit.chunk.doc_id == gone.stem][:1]
 
     monkeypatch.setattr(SearchService, "hybrid_search", only_the_gone_doc)
-    monkeypatch.setattr(run_service, "sync_index", failing_sync)
+    monkeypatch.setattr(engine_service, "sync_index", failing_sync)
     questions = write_questions(
         tmp_path / "q.jsonl", [{"id": "q", "question": query}]
     )
@@ -631,8 +633,8 @@ def install_loaders(
 
         return loader
 
-    monkeypatch.setattr(run_service, "load_embedder", load(embedder))
-    monkeypatch.setattr(run_service, "load_reranker", load(reranker))
+    monkeypatch.setattr(engine_service, "load_embedder", load(embedder))
+    monkeypatch.setattr(engine_service, "load_reranker", load(reranker))
 
 
 def test_models_are_passed_to_sync_and_search(
@@ -645,7 +647,7 @@ def test_models_are_passed_to_sync_and_search(
     install_loaders(monkeypatch, embedder, reranker)
     seen: dict[str, object] = {}
     real_open = SearchService.open
-    real_sync = run_service.sync_index
+    real_sync = engine_service.sync_index
 
     def spy_open(
         index_dir: Path, embedder: object = None, reranker: object = None
@@ -658,7 +660,7 @@ def test_models_are_passed_to_sync_and_search(
         return real_sync(*args, **kwargs)  # type: ignore[arg-type]
 
     monkeypatch.setattr(SearchService, "open", staticmethod(spy_open))
-    monkeypatch.setattr(run_service, "sync_index", spy_sync)
+    monkeypatch.setattr(engine_service, "sync_index", spy_sync)
     config, query = indexed
     questions = write_questions(
         tmp_path / "q.jsonl", [{"id": "q", "question": query}]
@@ -759,7 +761,7 @@ def test_hop_budget_runs_from_question_start_and_still_answers(
 ) -> None:
     clock = VirtualClock()
     llm = SlowHopLlm(clock)
-    monkeypatch.setattr(run_service, "LlmGateway", lambda config: llm)
+    monkeypatch.setattr(engine_service, "LlmGateway", lambda config: llm)
     monkeypatch.setattr(
         answer_service, "time", SimpleNamespace(monotonic=clock)
     )
@@ -856,7 +858,7 @@ def test_llm_error_trace_records_the_error(
     tmp_path: Path,
 ) -> None:
     llm = FakeLlm(LlmUnavailableError("down"))
-    monkeypatch.setattr(run_service, "LlmGateway", lambda config: llm)
+    monkeypatch.setattr(engine_service, "LlmGateway", lambda config: llm)
     config, query = indexed
     questions = write_questions(
         tmp_path / "q.jsonl", [{"id": "q1", "question": query}]
@@ -877,7 +879,7 @@ def test_unexpected_error_trace_names_the_exception(
     tmp_path: Path,
 ) -> None:
     llm = FakeLlm(RuntimeError("boom"))
-    monkeypatch.setattr(run_service, "LlmGateway", lambda config: llm)
+    monkeypatch.setattr(engine_service, "LlmGateway", lambda config: llm)
     config, query = indexed
     questions = write_questions(
         tmp_path / "q.jsonl", [{"id": "q1", "question": query}]
