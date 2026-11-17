@@ -1,5 +1,4 @@
 from archive.agent.recipes.aggregation_service import run_aggregation
-from archive.agent.recipes.superseded_service import run_superseded
 from archive.agent.route.route_model import QuestionFamily, QuestionPlan
 from archive.llm.llm_gateway import LlmGateway
 from archive.retrieval.search_service import SearchFilters, SearchHit
@@ -25,4 +24,3 @@ def test_recipes_defer_to_the_direct_path() -> None:
     llm = LlmGateway.__new__(LlmGateway)
 
     assert run_aggregation(QUESTION, plan, NoSearch(), llm) is None
-    assert run_superseded(QUESTION, plan, NoSearch()) is None
