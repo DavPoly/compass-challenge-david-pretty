@@ -22,6 +22,7 @@ from archive.viewer.viewer_build_service import (
     ViewerBudget,
     ViewerRequest,
     build_viewer,
+    question_view_from_trace,
 )
 from archive.viewer.viewer_constants import DATA_PLACEHOLDER
 
@@ -382,3 +383,89 @@ def test_template_with_missing_asset_raises(tmp_path: Path) -> None:
 
     with pytest.raises(FileNotFoundError, match="viewer_styles.css"):
         build_viewer(request)
+
+
+def _live_request(tmp_path: Path, live: bool = False) -> ViewerRequest:
+    template = tmp_path / "template.html"
+    template.write_text(TEMPLATE, encoding="utf-8")
+    return ViewerRequest(
+        trace_dir=tmp_path / "traces",
+        corpus_dir=tmp_path / "corpus",
+        out_dir=tmp_path / "out",
+        budget=ViewerBudget(None, lambda: 0.0),
+        render=FakeRenderer(),
+        template_path=template,
+        extra_trace_dirs=(tmp_path / "live", tmp_path / "absent"),
+        live=live,
+    )
+
+
+def _page_data(index: Path) -> dict[str, object]:
+    text = index.read_text(encoding="utf-8")
+    payload = text.removeprefix(TEMPLATE.split(DATA_PLACEHOLDER)[0])
+    data: dict[str, object] = json.loads(payload.removesuffix("</script>"))
+    return data
+
+
+def test_extra_trace_dirs_are_live_and_ordered_after_run(
+    tmp_path: Path,
+) -> None:
+    write_trace(tmp_path / "traces", make_trace("q2"))
+    write_trace(tmp_path / "traces", make_trace("q1"))
+    write_trace(tmp_path / "live", make_trace("a9"))
+    write_trace(tmp_path / "live", make_trace("a1"))
+
+    data = _page_data(build_viewer(_live_request(tmp_path, live=True)))
+
+    questions = data["questions"]
+    assert isinstance(questions, list)
+    assert [(q["id"], q["is_live"]) for q in questions] == [
+        ("q1", False),
+        ("q2", False),
+        ("a1", True),
+        ("a9", True),
+    ]
+    assert data["live"] is True
+
+
+def test_live_flag_defaults_to_false_and_missing_extra_dir_is_ok(
+    tmp_path: Path,
+) -> None:
+    write_trace(tmp_path / "traces", make_trace("q1"))
+
+    data = _page_data(build_viewer(_live_request(tmp_path)))
+
+    assert data["live"] is False
+    questions = data["questions"]
+    assert isinstance(questions, list)
+    assert len(questions) == 1
+
+
+def test_question_view_from_trace_matches_build_viewer_view(
+    tmp_path: Path,
+) -> None:
+    trace = make_trace("q1", ["x"])
+    write_trace(tmp_path / "traces", trace)
+    request = _live_request(tmp_path)
+    built = _page_data(build_viewer(request))["questions"]
+    assert isinstance(built, list)
+
+    view = question_view_from_trace(trace, request)
+
+    expected = dict(built[0])
+    assert view.model_dump() == expected
+    assert view.evidence[0].crop_image == "pages/q1_0_crop.png"
+    live_view = question_view_from_trace(trace, request, is_live=True)
+    assert live_view.is_live is True
+
+
+def test_template_inlines_live_script(tmp_path: Path) -> None:
+    (tmp_path / "viewer_live.js").write_text("const live=1;", "utf-8")
+    request = _asset_request(
+        tmp_path,
+        "<script>/*__VIEWER_LIVE__*/</script>" + TEMPLATE,
+    )
+
+    text = build_viewer(request).read_text(encoding="utf-8")
+
+    assert text.startswith("<script>const live=1;</script>")
