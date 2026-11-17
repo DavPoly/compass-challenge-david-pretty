@@ -63,7 +63,11 @@ DATE_MONTH_WORD_DAY_PATTERN = (
     r"(?<![^\W\d_])(?P<m>[^\W\d_]{3,12})\.?\s+(?P<d>\d{1,2})"
     r"(?:st|nd|rd|th)?,?\s+(?P<y>\d{4})(?!\d)"
 )
+DATE_MONTH_YEAR_PATTERN = (
+    r"(?<![^\W\d_])(?P<m>[^\W\d_]{3,12})\.?\s+(?P<y>\d{4})(?!\d)"
+)
 
+MONTH_FIRST_DAY = 1
 SHORT_YEAR_CENTURY = 2000
 SHORT_YEAR_DIGITS = 2
 MONTH_FUZZY_MIN_LENGTH = 4
