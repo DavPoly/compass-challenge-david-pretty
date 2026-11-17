@@ -5,8 +5,11 @@ values must come from a verified quote or the recipe note. Nothing is
 changed: the result is a report with issues and a confidence.
 """
 
+import re
 from collections.abc import Iterable
 
+from archive.common.text.date_parsing_constants import DAY_FIRST_DATE_RE
+from archive.common.text.date_parsing_utils import build_iso_date
 from archive.common.text.text_normalize_utils import normalize_for_match
 from archive.validation.answer_model import (
     AnswerStatus,
@@ -17,6 +20,7 @@ from archive.validation.answer_validator import (
     ValidationResult,
     normalize_amount,
     normalize_date,
+    normalize_doc_id,
 )
 from archive.validation.grounding.grounding_constants import (
     BARE_AMOUNT_SUFFIX,
@@ -24,6 +28,8 @@ from archive.validation.grounding.grounding_constants import (
     ISSUE_NO_EVIDENCE,
     ISSUE_QUOTE_UNVERIFIED,
     ISSUE_VALUE_UNGROUNDED,
+    PUNCTUATION_FOLD,
+    TRAILING_PUNCTUATION,
     WHITESPACE_RE,
 )
 from archive.validation.grounding.grounding_model import (
@@ -32,20 +38,20 @@ from archive.validation.grounding.grounding_model import (
     GroundingSources,
 )
 from archive.validation.issue_model import IssueCode, ValidationIssue
-from archive.validation.validation_constants import AMOUNT_RE, PDF_SUFFIX
+from archive.validation.validation_constants import AMOUNT_RE
 
 
 def _fold(text: str) -> str:
-    """Case, accent and whitespace-insensitive form for matching."""
-    return WHITESPACE_RE.sub(" ", normalize_for_match(text)).strip()
+    """Case, accent, whitespace and typographic punctuation folded."""
+    plain = normalize_for_match(text.translate(PUNCTUATION_FOLD))
+    return WHITESPACE_RE.sub(" ", plain).strip()
 
 
 def _is_verified(evidence: Evidence, sources: GroundingSources) -> bool:
     quote = _fold(evidence.quote)
     if not quote:
         return False
-    doc_id = evidence.doc_id.strip().removesuffix(PDF_SUFFIX)
-    texts = sources.texts_by_doc.get(doc_id, ())
+    texts = sources.texts_by_doc.get(normalize_doc_id(evidence.doc_id), ())
     return any(quote in _fold(text) for text in texts)
 
 
@@ -56,6 +62,16 @@ def _amount_key(text: str) -> str | None:
     )
 
 
+def _day_first_readings(match: re.Match[str]) -> set[str]:
+    """Both ISO readings (DD/MM and MM/DD) of an ambiguous date."""
+    first, second, year = (int(group) for group in match.groups())
+    readings = {
+        build_iso_date(year, second, first),
+        build_iso_date(year, first, second),
+    }
+    return {reading for reading in readings if reading}
+
+
 def _scan_keys(folded: str) -> set[str]:
     """Normalized dates and amounts occurring in folded text."""
     keys: set[str] = set()
@@ -63,6 +79,8 @@ def _scan_keys(folded: str) -> set[str]:
         for match in pattern.finditer(folded):
             if date := normalize_date(match.group(0)):
                 keys.add(date)
+    for match in DAY_FIRST_DATE_RE.finditer(folded):
+        keys |= _day_first_readings(match)
     for match in AMOUNT_RE.finditer(folded):
         if amount := _amount_key(match["number"]):
             keys.add(amount)
@@ -70,11 +88,12 @@ def _scan_keys(folded: str) -> set[str]:
 
 
 def _is_grounded(item: str, haystacks: list[str]) -> bool:
-    folded = _fold(item)
+    trimmed = item.strip().rstrip(TRAILING_PUNCTUATION)
+    folded = _fold(trimmed)
     if any(folded in haystack for haystack in haystacks):
         return True
     item_keys = {
-        key for key in (normalize_date(item), _amount_key(item)) if key
+        key for key in (normalize_date(trimmed), _amount_key(trimmed)) if key
     }
     return any(item_keys & _scan_keys(haystack) for haystack in haystacks)
 
@@ -139,7 +158,9 @@ def check_grounding(
         for evidence in draft.evidence
         if not _is_verified(evidence, sources)
     ]
-    verified = [e for e in draft.evidence if e not in unverified]
+    verified = [
+        evidence for evidence in draft.evidence if evidence not in unverified
+    ]
     ungrounded: list[str] = []
     if draft.status is AnswerStatus.ANSWERED:
         ungrounded = _ungrounded_values(draft, verified, sources)

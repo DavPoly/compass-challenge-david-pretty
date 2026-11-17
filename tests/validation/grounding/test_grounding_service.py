@@ -1,3 +1,5 @@
+import pytest
+
 from archive.validation.answer_model import (
     AnswerStatus,
     DraftAnswer,
@@ -7,6 +9,7 @@ from archive.validation.answer_model import (
 from archive.validation.answer_validator import ValidationResult
 from archive.validation.grounding.grounding_model import (
     Confidence,
+    GroundingReport,
     GroundingSources,
 )
 from archive.validation.grounding.grounding_service import check_grounding
@@ -274,3 +277,52 @@ def test_insufficient_evidence_makes_confidence_medium() -> None:
     )
 
     assert report.confidence is Confidence.MEDIUM
+
+
+def _grounded_report(
+    answer: str, doc_text: str, quote: str
+) -> GroundingReport:
+    sources = GroundingSources(
+        texts_by_doc={"doc_0001": [doc_text]}, note=None
+    )
+    evidence = [Evidence(doc_id="doc_0001", quote=quote)]
+    return check_grounding(
+        _draft(answer, evidence=evidence), sources, _validation()
+    )
+
+
+@pytest.mark.parametrize("answer", ["2024-03-05", "2024-05-03"])
+def test_ambiguous_day_month_date_grounds_both_readings(answer: str) -> None:
+    report = _grounded_report(answer, "Signé le 05/03/2024.", "le 05/03/2024")
+
+    assert report.ungrounded_values == []
+
+
+def test_day_month_date_with_other_day_is_ungrounded() -> None:
+    report = _grounded_report(
+        "2024-03-06", "Signé le 05/03/2024.", "le 05/03/2024"
+    )
+
+    assert report.ungrounded_values == ["2024-03-06"]
+
+
+@pytest.mark.parametrize(
+    ("doc_text", "quote"),
+    [
+        ("l’équipe d'Anne", "l'équipe d’Anne"),
+        ("l'équipe d'Anne", "l’équipe d’Anne"),
+        ("dit «oui» – non", 'dit "oui" - non'),
+    ],
+)
+def test_typographic_punctuation_is_folded(doc_text: str, quote: str) -> None:
+    report = _grounded_report("equipe", doc_text, quote)
+
+    assert report.unverified_quotes == []
+
+
+def test_trailing_punctuation_of_an_answer_is_ignored() -> None:
+    report = _grounded_report(
+        "Montréal.", "Ville : Montréal", "Ville : Montréal"
+    )
+
+    assert report.ungrounded_values == []
