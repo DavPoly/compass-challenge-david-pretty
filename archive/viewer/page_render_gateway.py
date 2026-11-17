@@ -15,20 +15,21 @@ from archive.viewer.quote_locate_utils import (
     Word,
     locate_quote,
 )
-
-RENDER_DPI = 110
-POINTS_PER_INCH = 72
-CROP_MARGIN_PT = 36.0
-FALLBACK_PAGE_NUMBER = 1
-FULL_SUFFIX = "_page.png"
-CROP_SUFFIX = "_crop.png"
-OVERLAY_ALPHA = 70
-OUTLINE_WIDTH_PX = 2
-VALUE_OUTLINE_WIDTH_PX = 3
-VERIFIED_RGB = (30, 160, 70)
-UNVERIFIED_RGB = (210, 50, 50)
-VALUE_VERIFIED_RGB = (0, 90, 30)
-VALUE_UNVERIFIED_RGB = (130, 0, 0)
+from archive.viewer.viewer_constants import (
+    CROP_MARGIN_PT,
+    CROP_SUFFIX,
+    FALLBACK_PAGE_NUMBER,
+    FULL_SUFFIX,
+    OUTLINE_WIDTH_PX,
+    OVERLAY_ALPHA,
+    POINTS_PER_INCH,
+    UNVERIFIED_RGB,
+    VALUE_OUTLINE_WIDTH_PX,
+    VALUE_UNVERIFIED_RGB,
+    VALUE_VERIFIED_RGB,
+    VERIFIED_RGB,
+    VIEWER_DPI,
+)
 
 
 @dataclass(frozen=True)
@@ -73,7 +74,7 @@ def _scaled(box: Box, scale: float) -> tuple[float, float, float, float]:
 def _draw_boxes(
     image: Image.Image, match: QuoteMatch, is_verified: bool
 ) -> Image.Image:
-    scale = RENDER_DPI / POINTS_PER_INCH
+    scale = VIEWER_DPI / POINTS_PER_INCH
     quote_rgb = VERIFIED_RGB if is_verified else UNVERIFIED_RGB
     value_rgb = VALUE_VERIFIED_RGB if is_verified else VALUE_UNVERIFIED_RGB
     overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
@@ -97,7 +98,7 @@ def _draw_boxes(
 def _crop(
     image: Image.Image, match: QuoteMatch, page_width_pt: float
 ) -> Image.Image:
-    scale = RENDER_DPI / POINTS_PER_INCH
+    scale = VIEWER_DPI / POINTS_PER_INCH
     top = min(box.top for box in match.boxes) - CROP_MARGIN_PT
     bottom = max(box.bottom for box in match.boxes) + CROP_MARGIN_PT
     left = max(0.0, min(box.x0 for box in match.boxes) - CROP_MARGIN_PT)
@@ -123,7 +124,7 @@ def _find_match(pdf: PDF, evidence: Evidence) -> tuple[int, QuoteMatch] | None:
 
 
 def _page_image(page: Page) -> Image.Image:
-    return page.to_image(resolution=RENDER_DPI).original.convert("RGB")
+    return page.to_image(resolution=VIEWER_DPI).original.convert("RGB")
 
 
 def _save(image: Image.Image, path: Path) -> Path:
