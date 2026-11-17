@@ -19,6 +19,12 @@ LINE_TOP_TOLERANCE_PT = 3.0
 VIEWER_GRACE_S = 90.0
 TEMPLATE_PATH = Path(__file__).parent / "template" / "viewer_template.html"
 DATA_PLACEHOLDER = "__VIEWER_DATA__"
+# Template token -> sibling file inlined in its place (CSS and JS).
+INLINE_ASSETS = (
+    ("/*__VIEWER_STYLES__*/", "viewer_styles.css"),
+    ("/*__VIEWER_DOM__*/", "viewer_dom.js"),
+    ("/*__VIEWER_APP__*/", "viewer_app.js"),
+)
 INDEX_FILENAME = "index.html"
 PAGES_DIRNAME = "pages"
 VIEWER_ENCODING = "utf-8"
@@ -63,6 +69,9 @@ LOG_VIEWER_WRITTEN = "viewer: wrote %s"
 
 MSG_TEMPLATE_MISSING = (
     "Viewer template not found at {path}; reinstall or restore it."
+)
+MSG_ASSET_MISSING = (
+    "Viewer asset {path} (token {token}) not found; restore it."
 )
 MSG_PLACEHOLDER_MISSING = (
     "Viewer template {path} has no {placeholder} placeholder."

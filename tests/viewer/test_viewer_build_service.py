@@ -345,3 +345,40 @@ def test_template_without_placeholder_raises(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match=DATA_PLACEHOLDER):
         build_viewer(request)
+
+
+def _asset_request(tmp_path: Path, template_text: str) -> ViewerRequest:
+    (tmp_path / "traces").mkdir()
+    template = tmp_path / "template.html"
+    template.write_text(template_text, encoding="utf-8")
+    return ViewerRequest(
+        trace_dir=tmp_path / "traces",
+        corpus_dir=tmp_path,
+        out_dir=tmp_path / "out",
+        budget=ViewerBudget(None, lambda: 0.0),
+        render=FakeRenderer(),
+        template_path=template,
+    )
+
+
+def test_template_inlines_sibling_assets(tmp_path: Path) -> None:
+    (tmp_path / "viewer_styles.css").write_text("body{margin:0}", "utf-8")
+    request = _asset_request(
+        tmp_path,
+        "<style>/*__VIEWER_STYLES__*/</style>" + TEMPLATE,
+    )
+
+    text = build_viewer(request).read_text(encoding="utf-8")
+
+    assert text.startswith("<style>body{margin:0}</style>")
+    assert "__VIEWER_STYLES__" not in text
+
+
+def test_template_with_missing_asset_raises(tmp_path: Path) -> None:
+    request = _asset_request(
+        tmp_path,
+        "<style>/*__VIEWER_STYLES__*/</style>" + TEMPLATE,
+    )
+
+    with pytest.raises(FileNotFoundError, match="viewer_styles.css"):
+        build_viewer(request)
