@@ -76,6 +76,30 @@ python <kit>/score.py answers.jsonl --json --details > scores.json
 python scripts/build_viewer.py traces/<run> --scores scores.json
 ```
 
+### Mode interactif (poser des questions en direct)
+
+Le visualiseur peut aussi tourner en local et répondre à de nouvelles
+questions saisies dans sa barre du haut :
+
+```bash
+python scripts/serve.py [--run traces/<run>]
+```
+
+Les variables `LLM_BASE_URL`, `LLM_API_KEY` et `LLM_MODEL` sont
+nécessaires (comme pour `answer.py`). Ouvrir ensuite
+http://127.0.0.1:8000 (`--port` pour changer de port). La page montre :
+
+- les étapes du traitement en direct (routage, recherche, rédaction,
+  validation, vérification des citations, rendu des pages) ;
+- la réponse avec ses citations surlignées dans les pages sources ;
+- les questions posées, sauvegardées dans `traces/live/` et rechargées
+  au redémarrage, sous « Questions posées ».
+
+`--run` ajoute à la page un run terminé d'`answer.py`. Le serveur écoute
+sur `127.0.0.1` uniquement, sans authentification, et traite une seule
+question à la fois. `answer.py` n'est pas modifié et le visualiseur
+statique continue de fonctionner sans serveur.
+
 ## Messages d'erreur
 
 Les erreurs vont sur stderr ; les messages `ERROR` du pipeline sont préfixés
