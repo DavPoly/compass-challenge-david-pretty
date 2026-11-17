@@ -3,7 +3,7 @@ from dataclasses import replace
 import pytest
 
 from archive.agent import answer_service
-from archive.agent.answer_service import answer_question
+from archive.agent.answer_service import DraftOutcome, answer_question
 from archive.agent.hops.hop_model import HopPolicy
 from archive.agent.prompt_constants import MAX_PROMPT_CHUNKS
 from archive.agent.recipes.recipe_model import RecipeResult
@@ -70,7 +70,7 @@ def _plan_as(monkeypatch: pytest.MonkeyPatch, family: QuestionFamily) -> None:
     )
 
 
-def _run(llm: FakeLlm) -> tuple[DraftAnswer, set[str]]:
+def _run(llm: FakeLlm) -> DraftOutcome:
     gateway: LlmGateway = llm  # type: ignore[assignment]
     return answer_question(QUESTION, FakeSearch(), gateway)
 
@@ -81,10 +81,10 @@ def test_direct_path_retrieves_then_drafts(
     _plan_as(monkeypatch, QuestionFamily.DIRECT)
     llm = FakeLlm()
 
-    answer, retrieved_ids = _run(llm)
+    outcome = _run(llm)
 
-    assert answer == LLM_ANSWER
-    assert retrieved_ids == {"doc_a"}
+    assert outcome.draft == LLM_ANSWER
+    assert outcome.doc_ids == {"doc_a"}
     assert len(llm.calls) == 1
 
 
@@ -95,10 +95,10 @@ def test_recipe_returning_none_falls_back_to_direct(
     monkeypatch.setattr(answer_service, "run_superseded", lambda *args: None)
     llm = FakeLlm()
 
-    answer, retrieved_ids = _run(llm)
+    outcome = _run(llm)
 
-    assert answer == LLM_ANSWER
-    assert retrieved_ids == {"doc_a"}
+    assert outcome.draft == LLM_ANSWER
+    assert outcome.doc_ids == {"doc_a"}
 
 
 def test_recipe_draft_skips_the_llm(
@@ -111,10 +111,10 @@ def test_recipe_draft_skips_the_llm(
     )
     llm = FakeLlm()
 
-    answer, retrieved_ids = _run(llm)
+    outcome = _run(llm)
 
-    assert answer == RECIPE_ANSWER
-    assert retrieved_ids == {"doc_b"}
+    assert outcome.draft == RECIPE_ANSWER
+    assert outcome.doc_ids == {"doc_b"}
     assert llm.calls == []
 
 
@@ -126,9 +126,9 @@ def test_recipe_note_reaches_the_prompt(
     monkeypatch.setattr(answer_service, "run_superseded", lambda *args: result)
     llm = FakeLlm()
 
-    _, retrieved_ids = _run(llm)
+    outcome = _run(llm)
 
-    assert retrieved_ids == {"doc_c"}
+    assert outcome.doc_ids == {"doc_c"}
     assert "Note: v2 is in force" in llm.calls[0][1]["content"]
 
 
@@ -139,9 +139,11 @@ def test_draft_path_ids_are_only_the_hits_in_the_prompt(
     hits = [_hit(f"doc_{n:02d}") for n in range(MAX_PROMPT_CHUNKS + 3)]
     monkeypatch.setattr(answer_service, "retrieve", lambda *args: hits)
 
-    _, retrieved_ids = _run(FakeLlm())
+    outcome = _run(FakeLlm())
 
-    assert retrieved_ids == {f"doc_{n:02d}" for n in range(MAX_PROMPT_CHUNKS)}
+    assert outcome.doc_ids == {
+        f"doc_{n:02d}" for n in range(MAX_PROMPT_CHUNKS)
+    }
 
 
 def test_recipe_with_its_own_draft_keeps_all_its_hits(
@@ -154,9 +156,9 @@ def test_recipe_with_its_own_draft_keeps_all_its_hits(
         answer_service, "run_aggregation", lambda *args: result
     )
 
-    _, retrieved_ids = _run(FakeLlm())
+    outcome = _run(FakeLlm())
 
-    assert len(retrieved_ids) == MAX_PROMPT_CHUNKS + 3
+    assert len(outcome.doc_ids) == MAX_PROMPT_CHUNKS + 3
 
 
 notes: list[str | None] = []
@@ -198,10 +200,10 @@ def test_multi_hop_dispatches_to_run_hops(
     seen = _spy_run_hops(monkeypatch, result)
     llm = FakeLlm()
 
-    answer, retrieved_ids = _run(llm)
+    outcome = _run(llm)
 
-    assert answer == RECIPE_ANSWER
-    assert retrieved_ids == {"doc_m"}
+    assert outcome.draft == RECIPE_ANSWER
+    assert outcome.doc_ids == {"doc_m"}
     assert [_unstarted(policy) for policy, _ in seen] == [
         HopPolicy.multi_hop()
     ]
@@ -215,10 +217,10 @@ def test_sufficient_direct_draft_skips_the_safety_net(
     seen = _spy_run_hops(monkeypatch, RecipeResult(hits=[]))
     llm = FakeLlm()
 
-    answer, retrieved_ids = _run(llm)
+    outcome = _run(llm)
 
-    assert answer == LLM_ANSWER
-    assert retrieved_ids == {"doc_a"}
+    assert outcome.draft == LLM_ANSWER
+    assert outcome.doc_ids == {"doc_a"}
     assert len(llm.calls) == 1
     assert seen == []
 
@@ -234,10 +236,10 @@ def test_insufficient_direct_draft_runs_the_safety_net(
     seen = _spy_run_hops(monkeypatch, hopped)
     llm = FakeLlm(first)
 
-    answer, retrieved_ids = _run(llm)
+    outcome = _run(llm)
 
-    assert answer == RECIPE_ANSWER
-    assert retrieved_ids == {"doc_a", "doc_n"}
+    assert outcome.draft == RECIPE_ANSWER
+    assert outcome.doc_ids == {"doc_a", "doc_n"}
     assert len(llm.calls) == 1
     assert [(_unstarted(p), d) for p, d in seen] == [
         (HopPolicy.safety_net(), first)
@@ -254,9 +256,9 @@ def test_insufficient_draft_without_missing_skips_the_safety_net(
     )
     seen = _spy_run_hops(monkeypatch, RecipeResult(hits=[]))
 
-    answer, _ = _run(FakeLlm(first))
+    outcome = _run(FakeLlm(first))
 
-    assert answer == first
+    assert outcome.draft == first
     assert seen == []
 
 
@@ -301,3 +303,30 @@ def test_policies_carry_the_question_start(
     _run(FakeLlm())
 
     assert policies[0].started_s is not None
+
+
+def test_outcome_carries_the_recipe_note_and_hits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _plan_as(monkeypatch, QuestionFamily.AGGREGATION)
+    hits = [_hit("inv_1"), _hit("inv_2")]
+    result = RecipeResult(hits=hits, draft=RECIPE_ANSWER, note="total 5")
+    monkeypatch.setattr(
+        answer_service, "run_aggregation", lambda *args: result
+    )
+
+    outcome = _run(FakeLlm())
+
+    assert outcome.note == "total 5"
+    assert outcome.hits == hits
+
+
+def test_direct_outcome_has_no_note(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _plan_as(monkeypatch, QuestionFamily.DIRECT)
+
+    outcome = _run(FakeLlm())
+
+    assert outcome.note is None
+    assert [hit.chunk.doc_id for hit in outcome.hits] == ["doc_a"]
