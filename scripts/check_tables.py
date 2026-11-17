@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pdfplumber
 from pdfminer.psexceptions import PSException
+from pdfplumber.utils.exceptions import PdfminerException
 
 # Allow `python scripts/check_tables.py` from any directory.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -92,7 +93,7 @@ def select_sample(corpus: Path) -> list[tuple[DocType, Path]]:
             break
         try:
             family = detect_doc_type(_first_page_text(path))
-        except (PSException, OSError) as error:
+        except (PSException, PdfminerException, OSError) as error:
             print(f"skip {path.name}: {error}", file=sys.stderr)
             continue
         if quotas.get(family, 0) > 0:

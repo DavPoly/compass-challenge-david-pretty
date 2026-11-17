@@ -70,7 +70,12 @@ def _load_gold(path: Path) -> list[GoldQuestion]:
                 questions.append(
                     GoldQuestion(row["id"], row["question"], citations)
                 )
-        except (json.JSONDecodeError, KeyError, AttributeError) as error:
+        except (
+            json.JSONDecodeError,
+            KeyError,
+            AttributeError,
+            TypeError,
+        ) as error:
             raise ValueError(
                 f"{path}:{line_number}: malformed gold row ({error!r});"
                 " expected a JSON object with id, question, citations"
