@@ -204,3 +204,7 @@ in one Agent call, and the main agent does not implement tasks inline.
   `QuestionView.steps: list[StepView{step, label, detail, elapsed_s}]`; French
   labels shared from `archive/common/step_constants.py`. Branches
   `feat/trace-steps` (Python) and `feat/steps-timeline` (template).
+- 2026-11-17: (user decision) the localhost web app is the only UI. answer.py
+  no longer builds a static viewer (still writes traces for `serve.py --run`);
+  `scripts/build_viewer.py` deleted; no committed `demo/viewer/` (the demo is
+  the video). `archive/viewer/` stays as the web app's front end.
