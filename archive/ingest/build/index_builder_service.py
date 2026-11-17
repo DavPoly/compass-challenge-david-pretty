@@ -3,7 +3,7 @@
 import logging
 import shutil
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +13,9 @@ from archive.common.constants import PDF_GLOB
 from archive.ingest.build.build_constants import (
     BUILD_FLUSH_CHUNKS,
     BUILD_MAP_CHUNKSIZE,
+    DENSE_BATCH_SIZE,
+    DENSE_LOG_EVERY_BATCHES,
+    LOG_DENSE_PROGRESS,
     MANIFEST_FILE_NAME,
 )
 from archive.ingest.build.manifest_gateway import (
@@ -27,8 +30,9 @@ from archive.ingest.parse.pdf_parse_gateway import (
     PdfParseError,
     parse_pdf,
 )
-from archive.retrieval.qdrant_constants import QDRANT_SUBDIR
-from archive.retrieval.qdrant_gateway import QdrantGateway
+from archive.retrieval.models.embedding_gateway import EmbeddingPort
+from archive.retrieval.qdrant.qdrant_constants import QDRANT_SUBDIR
+from archive.retrieval.qdrant.qdrant_gateway import QdrantGateway
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +49,7 @@ class BuildReport:
     chunks: int
     failed_docs: list[str]
     seconds: float
+    dense_chunks: int = 0
 
 
 @dataclass(frozen=True)
@@ -58,7 +63,10 @@ class ParsedFile:
 
 
 def build(
-    corpus_dir: Path, index_dir: Path, workers: int | None = None
+    corpus_dir: Path,
+    index_dir: Path,
+    workers: int | None = None,
+    embedder: EmbeddingPort | None = None,
 ) -> BuildReport:
     """Rebuild the index of every PDF of `corpus_dir` from scratch.
 
@@ -73,6 +81,8 @@ def build(
         corpus_dir: Directory of `*.pdf` files.
         index_dir: Output directory (`qdrant/` and `manifest.json`).
         workers: Worker processes; None lets the executor decide.
+        embedder: When set, every chunk also gets a dense vector (no
+            time budget); otherwise the index is sparse-only.
 
     Returns:
         Counts of documents, chunks and failures, and the duration.
@@ -86,9 +96,10 @@ def build(
     manifest: dict[str, ManifestEntry] = {}
     failed: list[str] = []
     chunk_count = 0
+    dense_count = 0
     gateway = QdrantGateway.open(index_dir)
     try:
-        gateway.ensure_collection()
+        gateway.ensure_collection(embedder.dim if embedder else None)
         buffer: list[Chunk] = []
         series_chunks: list[Chunk] = []
         for parsed in parse_all(paths, workers):
@@ -102,10 +113,11 @@ def build(
                 (series_chunks if is_series else buffer).append(chunk)
             chunk_count += len(parsed.chunks)
             if len(buffer) >= BUILD_FLUSH_CHUNKS:
-                gateway.upsert(buffer)
+                dense_count += _upsert(gateway, buffer, embedder)
                 buffer = []
-        gateway.upsert(buffer)
-        gateway.upsert(with_effective_to(series_chunks))
+        dense_count += _upsert(gateway, buffer, embedder)
+        series_chunks = with_effective_to(series_chunks)
+        dense_count += _upsert(gateway, series_chunks, embedder)
     finally:
         gateway.close()
     write_manifest(index_dir, manifest)
@@ -114,7 +126,41 @@ def build(
         chunks=chunk_count,
         failed_docs=failed,
         seconds=time.monotonic() - started,
+        dense_chunks=dense_count,
     )
+
+
+def _upsert(
+    gateway: QdrantGateway,
+    chunks: list[Chunk],
+    embedder: EmbeddingPort | None,
+) -> int:
+    """Upsert chunks, with dense vectors when embedding; return count."""
+    if embedder is None:
+        gateway.upsert(chunks)
+        return 0
+    vectors = [
+        vector for batch in embed_batches(embedder, chunks) for vector in batch
+    ]
+    gateway.upsert(chunks, vectors)
+    return len(vectors)
+
+
+def embed_batches(
+    embedder: EmbeddingPort, chunks: Sequence[Chunk]
+) -> Iterator[list[list[float]]]:
+    """Lazily embed chunk texts, yielding one list of vectors per batch.
+
+    Progress is logged every DENSE_LOG_EVERY_BATCHES batches. An
+    embedder error propagates to the caller.
+    """
+    for batch_index, start in enumerate(
+        range(0, len(chunks), DENSE_BATCH_SIZE), start=1
+    ):
+        texts = [c.text for c in chunks[start : start + DENSE_BATCH_SIZE]]
+        yield embedder.embed_passages(texts)
+        if batch_index % DENSE_LOG_EVERY_BATCHES == 0:
+            logger.info(LOG_DENSE_PROGRESS, start + len(texts))
 
 
 def _clear_previous_index(index_dir: Path) -> None:

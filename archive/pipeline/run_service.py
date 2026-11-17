@@ -23,16 +23,19 @@ from archive.pipeline.pipeline_constants import (
     EXIT_OK,
     GLOBAL_DEADLINE_S,
     LOG_DEADLINE_REACHED,
+    LOG_DENSE_UNAVAILABLE,
     LOG_DOC_IDS_DIFFER,
     LOG_DROPPED_CITATIONS,
     LOG_LATE_RESULT,
     LOG_LLM_UNAVAILABLE,
+    LOG_MODELS_ACTIVE,
     LOG_OVER_BUDGET,
     LOG_QUESTION_INVALID,
     LOG_QUESTION_ISSUE,
     LOG_SYNC_FAILED,
     LOG_SYNC_REPORT,
     LOG_UNEXPECTED_ERROR,
+    MODEL_LOAD_WORKERS,
     MSG_INDEX_OPEN,
     MSG_IO_ERROR,
     MSG_NO_CORPUS,
@@ -40,7 +43,16 @@ from archive.pipeline.pipeline_constants import (
     QUESTION_BUDGET_S,
     WORKER_COUNT,
 )
-from archive.retrieval.qdrant_gateway import IndexOpenError
+from archive.retrieval.models.embedding_gateway import (
+    EmbeddingPort,
+    load_embedder,
+)
+from archive.retrieval.models.model_constants import MODEL_LOAD_TIMEOUT_S
+from archive.retrieval.models.rerank_gateway import (
+    RerankPort,
+    load_reranker,
+)
+from archive.retrieval.qdrant.qdrant_gateway import IndexOpenError
 from archive.retrieval.search_service import SearchService
 from archive.validation.answer_model import FinalAnswer
 from archive.validation.answer_validator import validate
@@ -229,14 +241,38 @@ def _valid_doc_ids(search: SearchService, corpus_dir: Path) -> frozenset[str]:
     return valid
 
 
-def _sync_index_or_continue(config: AppConfig) -> None:
+def _load_models() -> tuple[EmbeddingPort | None, RerankPort | None]:
+    """Load the embedder and reranker in parallel.
+
+    A model that cannot be loaded is None (the loader logs the cause);
+    search then falls back to the remaining models, down to BM25 only.
+    """
+    with ThreadPoolExecutor(max_workers=MODEL_LOAD_WORKERS) as pool:
+        embedder = pool.submit(load_embedder, MODEL_LOAD_TIMEOUT_S)
+        reranker = pool.submit(load_reranker, MODEL_LOAD_TIMEOUT_S)
+        loaded = embedder.result(), reranker.result()
+    if loaded[0] is None:
+        logger.warning(LOG_DENSE_UNAVAILABLE)
+    logger.info(
+        LOG_MODELS_ACTIVE,
+        "on" if loaded[0] else "off",
+        "on" if loaded[1] else "off",
+    )
+    return loaded
+
+
+def _sync_index_or_continue(
+    config: AppConfig, embedder: EmbeddingPort | None
+) -> None:
     """Sync the index with the corpus; a failure is logged, not fatal.
 
     The full-build fallback only runs when the index is already
     unusable, so a failed sync never replaces a usable index.
     """
     try:
-        report = sync_index(config.corpus_dir, config.index_dir)
+        report = sync_index(
+            config.corpus_dir, config.index_dir, embedder=embedder
+        )
     except Exception:
         # Best effort: any failure (pool, Qdrant, validation) must not
         # stop the run, the existing index is still usable. A
@@ -250,6 +286,7 @@ def _sync_index_or_continue(config: AppConfig) -> None:
         len(report.changed),
         len(report.removed),
         len(report.failed),
+        report.sparse_only,
         report.seconds,
     )
 
@@ -281,9 +318,10 @@ def run(
     except QuestionsFileError as error:
         logger.error("%s", error)
         return EXIT_ERROR
-    _sync_index_or_continue(config)
+    embedder, reranker = _load_models()
+    _sync_index_or_continue(config, embedder)
     try:
-        search = SearchService.open(config.index_dir)
+        search = SearchService.open(config.index_dir, embedder, reranker)
     except (IndexOpenError, ManifestError) as error:
         logger.error(
             MSG_INDEX_OPEN.format(path=config.index_dir, reason=error)

@@ -1,4 +1,6 @@
 # Une dépendance par ligne, avec une version épinglée.
+fastembed==0.9.1
+onnxruntime==1.32.0
 openai==3.51.0
 pdfplumber==0.11.10
 pydantic==2.14.3

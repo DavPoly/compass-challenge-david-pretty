@@ -31,5 +31,9 @@ LOG_OVER_BUDGET = "question %s: over %.0f s budget, not_found"
 LOG_DEADLINE_REACHED = "question %s: global deadline reached, not_found"
 LOG_SYNC_FAILED = "index sync failed, using the existing index"
 LOG_SYNC_REPORT = (
-    "index sync: %d added, %d changed, %d removed, %d failed in %.1f s"
+    "index sync: %d added, %d changed, %d removed, %d failed, "
+    "%d sparse-only in %.1f s"
 )
+LOG_MODELS_ACTIVE = "search models: dense=%s, rerank=%s"
+LOG_DENSE_UNAVAILABLE = "dense model unavailable: BM25-only search"
+MODEL_LOAD_WORKERS = 2

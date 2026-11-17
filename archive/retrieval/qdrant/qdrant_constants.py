@@ -2,6 +2,7 @@
 
 COLLECTION_NAME = "archive_chunks"
 SPARSE_VECTOR_NAME = "bm25"
+DENSE_VECTOR_NAME = "dense"
 QDRANT_SUBDIR = "qdrant"
 UPSERT_BATCH_SIZE = 64
 SCROLL_PAGE_SIZE = 256
@@ -26,3 +27,4 @@ OPEN_FAILURE_HINT = (
     "Close any other process using it, or rebuild it with "
     "`python scripts/build_index.py`."
 )
+DENSE_LENGTH_ERROR = "dense has %d vectors for %d chunks: lengths must match"

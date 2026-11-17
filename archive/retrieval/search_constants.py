@@ -8,3 +8,10 @@ LOG_CLOSE_TIMEOUT = (
     "index closed after %.0f s without the read lock; a query may "
     "still have been running"
 )
+PREFETCH_K = 50
+LOG_EMBED_FAILED = (
+    "query embedding failed (%s); using sparse search for this query"
+)
+LOG_RERANK_FAILED = (
+    "reranking failed (%s); keeping the fused order for this query"
+)

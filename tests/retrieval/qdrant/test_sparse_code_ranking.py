@@ -6,8 +6,8 @@ from pathlib import Path
 
 from archive.common.chunk_model import Chunk, ChunkKind
 from archive.ingest.parse.pdf_parse_gateway import parse_pdf
-from archive.retrieval.qdrant_gateway import QdrantGateway
-from archive.retrieval.sparse_encoding_utils import sparse_vector
+from archive.retrieval.qdrant.qdrant_gateway import QdrantGateway
+from archive.retrieval.qdrant.sparse_encoding_utils import sparse_vector
 
 DOC_COUNT = 30
 TOP_K = 3
