@@ -492,3 +492,19 @@ def test_index_is_replaced_atomically_without_leftover_temp(
     assert seen == [("old page", True)]
     assert "old page" not in target.read_text("utf-8")
     assert not target.with_name(target.name + TEMP_SUFFIX).exists()
+
+
+def test_template_inlines_list_script_before_app(tmp_path: Path) -> None:
+    (tmp_path / "viewer_list.js").write_text("const list=1;", "utf-8")
+    (tmp_path / "viewer_app.js").write_text("const app=1;", "utf-8")
+    request = _asset_request(
+        tmp_path,
+        "<script>/*__VIEWER_LIST__*/</script>"
+        "<script>/*__VIEWER_APP__*/</script>" + TEMPLATE,
+    )
+
+    text = build_viewer(request).read_text(encoding="utf-8")
+
+    assert text.startswith(
+        "<script>const list=1;</script><script>const app=1;</script>"
+    )
