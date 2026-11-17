@@ -3,7 +3,7 @@
 **Status:** in-progress
 **Parent:** `.plans/impl-00-roadmap.md` step 02, `.plans/global-architecture.md` §1
 **BASE:** `59a79fc618692ee90f82cf2af424f1bbdfed5a05`
-**Subagent branches:** refactor/ingest-layout (T0, merged aee336d), feat/table-render (T1), feat/doc-metadata (T2), feat/index-sync (T3), feat/retrieve-hints (T4)
+**Subagent branches:** refactor/ingest-layout (T0, merged aee336d), feat/table-render (T1), feat/doc-metadata (T2), feat/index-sync (T3), feat/retrieve-hints (T4), feat/integrate-retrieve (T5)
 **Orchestrator branch B:** `feat/ingest-quality`, cut from `main` @ 59a79fc
 
 ## Context
@@ -210,3 +210,35 @@ After the final merge, `pre-commit-review` (`reviewer` + `quality`) runs on
   needs verbatim quotes). The amount parser stays in validation.
 - 2026-11-16: startup sync falls back to a full build when there is no index,
   and continues on the stale index when sync fails.
+- 2026-11-16 (T0): merged aee336d, 315 lines. pytest skips dirs named
+  `build` by default; `norecursedirs` in pyproject = pytest 9.2 default
+  minus "build" so `tests/ingest/build/` runs.
+- 2026-11-16 (T1): table check (`scripts/check_tables.py`): invoice
+  10/10, monthly_report 10/10, project_sheet 5/5, staff directory 1/1
+  (the corpus holds only one), technical_note 2/2 docs with tables;
+  invoice amounts sum to Subtotal 10/10 (FR and EN formats). 28 docs,
+  not 30, for lack of directories. Non-table lines verbatim vs
+  extract_text on 50 docs: 0 mismatches. Parse 0.061 → 0.132 s/doc
+  (accepted: ~20 s more on a 22-core full build; startup sync parses
+  only new docs).
+- 2026-11-16 (T2): doc_type unknown 0/3048 (invoice 983,
+  monthly_report 712, minutes 451, email 447, contract 93,
+  technical_note 90, project_sheet 90, memo 77, newsletter 68, policy
+  35, directory 2). The supplier list doc_2534 maps to `directory`
+  (closest frozen value). All 35 policies have version, effective_from
+  and series: 12 series, contiguous versions, no title-letter typos, so
+  no fuzzy series rule. doc_date None: 0 for every type. The recon
+  figure "44 undated contracts" came from a coarse regex and was wrong.
+- 2026-11-16 (T3): merge 708 lines (≈340 tests), just over the soft 700
+  budget, merged anyway. Missing index → startup sync builds it (exit 1
+  only if sync fails and no usable index remains); the run_service test
+  for "index open failure exits 1" was replaced by three tests. No-op
+  sync: 1.5–1.7 s on a quiet machine, 2.5–3.8 s under load, mostly
+  hashing 3,048 files; accepted (an mtime shortcut would change the
+  frozen ManifestEntry). Gateway gained `scroll_series`.
+- 2026-11-16 (T4): typed share 0.5; courriel/email, poste, salaire and
+  bare "rapport" are deliberately not hints. Recall on the old index
+  (all "unknown" types, so typed slots inert): mean @8 0.67, @12 0.71,
+  @16–32 0.73; s01/s12 stay 0 at every k, s20 0.12 at k=32.
+- 2026-11-16 (batch A): merged 3149ef5, c40f626, af8900a, 14afc88;
+  ruff, format, mypy --strict green, 374 tests.
