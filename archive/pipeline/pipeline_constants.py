@@ -24,6 +24,7 @@ LOG_DOC_IDS_DIFFER = (
 LOG_QUESTION_INVALID = "question %s invalid (%s): not_found"
 LOG_QUESTION_ISSUE = "question %s: %s"
 LOG_GROUNDING_CONFIDENCE = "question %s: grounding confidence %s"
+LOG_GROUNDING_FAILED = "question %s: grounding check failed"
 LOG_DROPPED_CITATIONS = "question %s: dropped citations %s"
 LOG_LLM_UNAVAILABLE = "question %s: LLM unavailable: %s"
 LOG_UNEXPECTED_ERROR = "question %s: unexpected error"

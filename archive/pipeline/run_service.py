@@ -25,6 +25,7 @@ from archive.pipeline.pipeline_constants import (
     LOG_DOC_IDS_DIFFER,
     LOG_DROPPED_CITATIONS,
     LOG_GROUNDING_CONFIDENCE,
+    LOG_GROUNDING_FAILED,
     LOG_LATE_RESULT,
     LOG_LLM_UNAVAILABLE,
     LOG_MODELS_ACTIVE,
@@ -137,19 +138,19 @@ def _answer_question(question: Question, context: RunContext) -> FinalAnswer:
         logger.warning(
             LOG_DROPPED_CITATIONS, question.id, result.dropped_citations
         )
-    _log_grounding(question.id, outcome, result)
+    try:
+        _log_grounding(question.id, outcome, result)
+    except Exception:  # broad catch at a boundary: flag-only, never fatal
+        logger.exception(LOG_GROUNDING_FAILED, question.id)
     return result.answer
 
 
 def _log_grounding(
     question_id: str, outcome: DraftOutcome, result: ValidationResult
 ) -> None:
-    texts_by_doc: dict[str, list[str]] = {}
-    for hit in outcome.hits:
-        texts_by_doc.setdefault(hit.chunk.doc_id, []).append(hit.chunk.text)
     report = check_grounding(
         outcome.draft,
-        GroundingSources(texts_by_doc, outcome.note),
+        GroundingSources.from_hits(outcome.hits, outcome.note),
         result,
     )
     for issue in report.issues:

@@ -6,6 +6,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel
 
+from archive.retrieval.search_service import SearchHit
 from archive.validation.issue_model import ValidationIssue
 
 
@@ -28,6 +29,18 @@ class GroundingSources:
 
     texts_by_doc: Mapping[str, Sequence[str]]
     note: str | None
+
+    @classmethod
+    def from_hits(
+        cls, hits: Sequence[SearchHit], note: str | None
+    ) -> "GroundingSources":
+        """Group the chunk texts of ``hits`` by their doc id."""
+        texts_by_doc: dict[str, list[str]] = {}
+        for hit in hits:
+            texts_by_doc.setdefault(hit.chunk.doc_id, []).append(
+                hit.chunk.text
+            )
+        return cls(texts_by_doc, note)
 
 
 class GroundingReport(BaseModel):
