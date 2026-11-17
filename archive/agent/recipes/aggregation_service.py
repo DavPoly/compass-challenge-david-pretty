@@ -20,6 +20,7 @@ from archive.agent.recipes.recipe_constants import (
     EXTRACT_USER_PROMPT,
     LOG_AGGREGATION,
     LOG_EXTRACT_UNAVAILABLE,
+    LOG_NO_MEASURE,
     MANAGER_ROW_RE,
     MISS_INSTRUCTION,
     PROJECT_CODE_PATTERN,
@@ -236,10 +237,14 @@ def run_aggregation(
     Sums the pre-tax or tax-included amount of the invoices selected by
     client, project codes or project manager (resolved through the
     project sheets) within the planned period. Returns None without a
-    narrowing entity or when no invoice matches. Amounts the regex
+    money measure, without a narrowing entity or when no invoice
+    matches. Amounts the regex
     cannot read go to one LLM extraction call; docs it cannot resolve
     are left out and the draft is flagged insufficient.
     """
+    if plan.measure is None:
+        logger.info(LOG_NO_MEASURE, question.id)
+        return None
     codes = _plan_codes(plan)
     sheets: list[SearchHit] = []
     if plan.project_manager:
@@ -249,7 +254,7 @@ def run_aggregation(
             return None
     elif plan.client is None and not codes:
         return None
-    measure = plan.measure or AmountMeasure.PRE_TAX
+    measure = plan.measure
     invoices = _select_invoices(plan, codes, search)
     for invoice in invoices:
         _read_amount(invoice, measure)
