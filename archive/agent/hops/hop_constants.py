@@ -5,6 +5,9 @@ from archive.common.chunk_model import DocType
 # Expand
 
 EXPAND_SOURCE_HITS = 3
+EXPAND_SHARED_MIN_HITS = 2
+EXPAND_MAX_CODES = 6
+EXPAND_PER_CODE_CAP = 4
 EXPAND_CAP = 8
 EMAIL_MARKER = "@"
 

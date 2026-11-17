@@ -1,8 +1,13 @@
 """Follow identifier links from hits to related documents."""
 
+from collections import Counter
+
 from archive.agent.hops.hop_constants import (
     EMAIL_MARKER,
     EXPAND_CAP,
+    EXPAND_MAX_CODES,
+    EXPAND_PER_CODE_CAP,
+    EXPAND_SHARED_MIN_HITS,
     EXPAND_SOURCE_HITS,
 )
 from archive.agent.recipes.recipe_model import RecipeSearchPort
@@ -22,10 +27,13 @@ def expand_by_identifiers(
 ) -> list[SearchHit]:
     """Return chunks linked to the question and hits by a shared code.
 
-    Codes come from the question text and from the identifiers of the
-    top hits; emails are ignored. Chunks of project sheets and
-    contracts carrying any of those codes are listed with
-    `list_by_filter`.
+    Pivot codes, in priority order: codes in the question text; codes
+    carried by at least `EXPAND_SHARED_MIN_HITS` distinct documents
+    among all hits (most frequent first); codes of the top
+    `EXPAND_SOURCE_HITS` hits. Emails are ignored and the list is capped
+    at `EXPAND_MAX_CODES`. Each code is listed separately over project
+    sheets and contracts, so a many-code query cannot crowd out the
+    relevant code. Listing stops once `EXPAND_CAP` chunks are found.
 
     Args:
         question: The question being answered.
@@ -33,45 +41,50 @@ def expand_by_identifiers(
         search: Search port used to list chunks by identifier.
 
     Returns:
-        Only chunks not already in `hits` (by chunk id), in the order
-        the codes were found, question codes first.
+        Only chunks not already in `hits` (by chunk id), in code order:
+        question codes first, then shared codes, then top-hit codes.
     """
-    codes = _collect_codes(question, hits)
-    if not codes:
-        return []
-    filters = SearchFilters(
-        identifiers=codes,
-        doc_types=[DocType.PROJECT_SHEET.value, DocType.CONTRACT.value],
-    )
-    listed = search.list_by_filter(filters, EXPAND_CAP)
-    return _rank_new_chunks(listed, hits, codes)[:EXPAND_CAP]
+    seen = {hit.chunk.chunk_id for hit in hits}
+    fresh: list[SearchHit] = []
+    for code in _collect_codes(question, hits):
+        filters = SearchFilters(
+            identifiers=[code],
+            doc_types=[
+                DocType.PROJECT_SHEET.value,
+                DocType.CONTRACT.value,
+            ],
+        )
+        for hit in search.list_by_filter(filters, EXPAND_PER_CODE_CAP):
+            if hit.chunk.chunk_id not in seen:
+                seen.add(hit.chunk.chunk_id)
+                fresh.append(hit)
+        if len(fresh) >= EXPAND_CAP:
+            break
+    return fresh[:EXPAND_CAP]
 
 
 def _collect_codes(question: Question, hits: list[SearchHit]) -> list[str]:
-    """Deduped non-email codes: question first, then top hits."""
+    """Deduped non-email codes by priority, capped at the max."""
     codes = find_identifiers(question.question)
+    codes.extend(_shared_codes(hits))
     for hit in hits[:EXPAND_SOURCE_HITS]:
         codes.extend(hit.chunk.identifiers)
     unique = dict.fromkeys(codes)
-    return [code for code in unique if EMAIL_MARKER not in code]
+    kept = [code for code in unique if EMAIL_MARKER not in code]
+    return kept[:EXPAND_MAX_CODES]
 
 
-def _rank_new_chunks(
-    listed: list[SearchHit], hits: list[SearchHit], codes: list[str]
-) -> list[SearchHit]:
-    """Unseen, deduped chunks ordered by their first matching code."""
-    seen = {hit.chunk.chunk_id for hit in hits}
-    fresh: list[SearchHit] = []
-    for hit in listed:
-        if hit.chunk.chunk_id not in seen:
-            seen.add(hit.chunk.chunk_id)
-            fresh.append(hit)
-    return sorted(fresh, key=lambda hit: _code_rank(hit, codes))
-
-
-def _code_rank(hit: SearchHit, codes: list[str]) -> int:
-    """Index of the first code the chunk carries (len if none)."""
-    for position, code in enumerate(codes):
-        if code in hit.chunk.identifiers:
-            return position
-    return len(codes)
+def _shared_codes(hits: list[SearchHit]) -> list[str]:
+    """Codes on several distinct docs, most frequent first."""
+    docs_by_code: dict[str, set[str]] = {}
+    for hit in hits:
+        for code in hit.chunk.identifiers:
+            docs_by_code.setdefault(code, set()).add(hit.chunk.doc_id)
+    counts = Counter({c: len(d) for c, d in docs_by_code.items()})
+    shared = [
+        code
+        for code, count in counts.items()
+        if count >= EXPAND_SHARED_MIN_HITS
+    ]
+    # dict order is first-rank order; sort is stable so ties keep it.
+    return sorted(shared, key=lambda code: -counts[code])
