@@ -6,11 +6,18 @@ import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from pydantic import BaseModel
 
+from archive.agent import answer_service
+from archive.agent.hops.hop_constants import (
+    HOP_TIME_BUDGET_S,
+    MULTI_HOP_MAX_DRAFTS,
+)
+from archive.agent.hops.hop_model import HopPolicy
 from archive.agent.route.route_model import QuestionFamily, QuestionPlan
 from archive.common.config import AppConfig
 from archive.ingest.build.index_builder_service import (
@@ -43,6 +50,8 @@ STOP_ONLY_QUESTION = "le la les"
 SLOW_MARK = "SLOWQUESTION"
 TICK_SLEEP_S = 0.001
 JOIN_TIMEOUT_S = 5.0
+SLOW_PLAN_S = 25.0
+SLOW_DRAFT_S = 10.0
 INDEX_SCAN_LIMIT = 1000
 EXPECTED_VALID_STATUSES = {s.value for s in AnswerStatus}
 
@@ -644,3 +653,76 @@ def test_model_loading_counts_against_the_global_deadline(
     assert code == EXIT_OK
     assert read_answers(answers)["q"]["status"] == "not_found"
     assert fake_llm.call_count == 0
+
+
+class VirtualClock:
+    """Time that only moves when the fake LLM spends it."""
+
+    def __init__(self) -> None:
+        self.now_s = 0.0
+
+    def __call__(self) -> float:
+        return self.now_s
+
+
+class SlowHopLlm:
+    """Plans multi_hop, then drafts insufficient answers, slowly."""
+
+    def __init__(self, clock: VirtualClock) -> None:
+        self.clock = clock
+        self.draft_count = 0
+
+    def complete_json(
+        self, messages: Messages, schema: type[BaseModel]
+    ) -> Any:
+        if schema is QuestionPlan:
+            self.clock.now_s += SLOW_PLAN_S
+            return QuestionPlan(family=QuestionFamily.MULTI_HOP)
+        self.draft_count += 1
+        self.clock.now_s += SLOW_DRAFT_S
+        doc_id = re.search(r'<document id="([^"]+)">', messages[-1]["content"])
+        assert doc_id
+        return DraftAnswer(
+            answer="partial",
+            status=AnswerStatus.ANSWERED,
+            citations=[doc_id.group(1)],
+            evidence_sufficient=False,
+            missing="the next fact to look up",
+        )
+
+
+def test_hop_budget_runs_from_question_start_and_still_answers(
+    indexed: tuple[AppConfig, str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    clock = VirtualClock()
+    llm = SlowHopLlm(clock)
+    monkeypatch.setattr(run_service, "LlmGateway", lambda config: llm)
+    monkeypatch.setattr(
+        answer_service, "time", SimpleNamespace(monotonic=clock)
+    )
+    monkeypatch.setattr(
+        HopPolicy,
+        "multi_hop",
+        classmethod(
+            lambda cls: cls(
+                max_drafts=MULTI_HOP_MAX_DRAFTS,
+                expand_upfront=True,
+                time_budget_s=HOP_TIME_BUDGET_S,
+                clock=clock,
+            )
+        ),
+    )
+    config, query = indexed
+    questions = write_questions(
+        tmp_path / "q.jsonl", [{"id": "q1", "question": query}]
+    )
+    answers = tmp_path / "a.jsonl"
+
+    code = run_service.run(questions, answers, config)
+
+    assert code == EXIT_OK
+    assert read_answers(answers)["q1"]["status"] == "answered"
+    assert llm.draft_count == 1
+    assert clock.now_s <= QUESTION_BUDGET_S
