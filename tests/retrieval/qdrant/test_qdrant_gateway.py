@@ -210,3 +210,111 @@ def test_to_point_uses_shared_sparse_encoding() -> None:
     }
     assert point.payload is not None
     assert point.payload["doc_id"] == "a"
+
+
+DENSE_DIM = 3
+HYBRID_K = 5
+PREFETCH_K = 10
+ALIGNED = [1.0, 0.0, 0.0]
+ORTHOGONAL = [0.0, 1.0, 0.0]
+NEARBY = [0.9, 0.1, 0.0]
+
+
+@pytest.fixture
+def dense_gateway(tmp_path: Path) -> Iterator[QdrantGateway]:
+    opened = QdrantGateway.open(tmp_path)
+    opened.ensure_collection(DENSE_DIM)
+    yield opened
+    opened.close()
+
+
+def hybrid_ids(
+    gateway: QdrantGateway,
+    dense: list[float] | None,
+    query_filter: models.Filter | None = None,
+) -> list[str]:
+    hits = gateway.query_hybrid(
+        sparse_vector("alpha beta"),
+        dense,
+        query_filter,
+        HYBRID_K,
+        PREFETCH_K,
+    )
+    return [chunk.doc_id for chunk, _ in hits]
+
+
+def test_has_dense_reflects_collection_config(
+    dense_gateway: QdrantGateway, tmp_path: Path
+) -> None:
+    assert dense_gateway.has_dense()
+    sparse_dir = tmp_path / "sparse"
+    sparse_only = QdrantGateway.open(sparse_dir)
+    try:
+        sparse_only.ensure_collection()
+        assert not sparse_only.has_dense()
+    finally:
+        sparse_only.close()
+
+
+def test_upsert_dense_length_mismatch_raises(
+    dense_gateway: QdrantGateway,
+) -> None:
+    with pytest.raises(ValueError, match="lengths must match"):
+        dense_gateway.upsert([make_chunk("a#0", "alpha")], [])
+
+
+def test_sparse_only_point_is_found_by_query_hybrid(
+    dense_gateway: QdrantGateway,
+) -> None:
+    dense_gateway.upsert(
+        [make_chunk("a#0", "alpha beta"), make_chunk("b#0", "alpha beta")],
+        [ALIGNED, None],
+    )
+    assert set(hybrid_ids(dense_gateway, ALIGNED)) == {"a", "b"}
+
+
+def test_rrf_ranks_doc_top_on_both_sides_first(
+    dense_gateway: QdrantGateway,
+) -> None:
+    dense_gateway.upsert(
+        [
+            make_chunk("lexical#0", "alpha"),
+            make_chunk("both#0", "alpha beta"),
+            make_chunk("semantic#0", "gamma"),
+        ],
+        [ORTHOGONAL, ALIGNED, NEARBY],
+    )
+    assert hybrid_ids(dense_gateway, ALIGNED)[0] == "both"
+
+
+def test_dense_none_matches_sparse_ranking(
+    dense_gateway: QdrantGateway,
+) -> None:
+    dense_gateway.upsert(
+        [make_chunk("a#0", "alpha"), make_chunk("b#0", "alpha beta")],
+        [ALIGNED, ORTHOGONAL],
+    )
+    sparse = dense_gateway.query_sparse(
+        sparse_vector("alpha beta"), None, HYBRID_K
+    )
+    assert hybrid_ids(dense_gateway, None) == [c.doc_id for c, _ in sparse]
+
+
+def test_query_hybrid_applies_filter_to_both_sides(
+    dense_gateway: QdrantGateway,
+) -> None:
+    dense_gateway.upsert(
+        [
+            make_chunk("a#0", "alpha beta", "invoice"),
+            make_chunk("b#0", "alpha beta", "contract"),
+        ],
+        [ALIGNED, ALIGNED],
+    )
+    contract_filter = models.Filter(
+        must=[
+            models.FieldCondition(
+                key="doc_type", match=models.MatchValue(value="contract")
+            )
+        ]
+    )
+    assert hybrid_ids(dense_gateway, ALIGNED, contract_filter) == ["b"]
