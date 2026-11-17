@@ -1,6 +1,6 @@
 # Plan: step 06 grounding (`impl-06-grounding`)
 
-**Status:** in-progress
+**Status:** done (pending sample run by user)
 **Parent:** `.plans/impl-00-roadmap.md` step 06, `.plans/global-architecture.md` §4 (output).
 
 ## Context
@@ -129,3 +129,22 @@ inline.
 
 - BASE: 28e45a655e3f583af8f6e2a2792ff40edb015fbe
 - Subagent branches: `feat/grounding-core` (T1), `feat/grounding-wiring` (T2)
+- Fix-round branch: `fix/grounding-review`.
+
+## Decisions log (implementation)
+
+- 2026-11-17: the amount/date scan treats bare numbers as amounts and
+  collapses all whitespace, including newlines.
+- 2026-11-17: review fixes. The aggregation recipe now sets a note with
+  the computed total, which only grounds values and is never prompted.
+  Ambiguous DD/MM dates add both readings. Typographic punctuation is
+  folded. Trailing punctuation is stripped from answer items. A
+  grounding error is logged and never changes the answer. Added
+  `GroundingSources.from_hits` and a shared `normalize_doc_id`.
+- 2026-11-17: skipped review nits. Adjacent numbers can merge in the
+  amount scan, and containment has no word boundaries. Both are rare
+  and only cause missed flags, never false ones. There was no second
+  review pass after the fix round (small diff, checks green), to save
+  tokens.
+- Result: 661 tests passing; ruff and mypy clean. The 45/45 sample run
+  is still to be done by the user.
