@@ -25,9 +25,11 @@ from archive.validation.answer_validator import (
 from archive.validation.grounding.grounding_constants import (
     BARE_AMOUNT_SUFFIX,
     DATE_SCAN_PATTERNS,
+    ELLIPSIS_RE,
     ISSUE_NO_EVIDENCE,
     ISSUE_QUOTE_UNVERIFIED,
     ISSUE_VALUE_UNGROUNDED,
+    MIN_QUOTE_PIECE_LENGTH,
     PUNCTUATION_FOLD,
     TRAILING_PUNCTUATION,
     WHITESPACE_RE,
@@ -47,12 +49,45 @@ def _fold(text: str) -> str:
     return WHITESPACE_RE.sub(" ", plain).strip()
 
 
+def _quote_pieces(quote: str) -> list[str]:
+    """Folded pieces of a quote split on ellipsis markers.
+
+    Tiny pieces are dropped only when a long enough piece remains;
+    a quote of tiny pieces only yields no piece.
+    """
+    parts = ELLIPSIS_RE.split(quote)
+    pieces = [piece for piece in map(_fold, parts) if piece]
+    if len(parts) == 1:
+        return pieces
+    return [piece for piece in pieces if len(piece) >= MIN_QUOTE_PIECE_LENGTH]
+
+
+def _has_pieces_in_order(pieces: list[str], text: str) -> bool:
+    position = 0
+    for piece in pieces:
+        found = text.find(piece, position)
+        if found < 0:
+            return False
+        position = found + len(piece)
+    return True
+
+
+def _is_quote_in_text(pieces: list[str], text: str) -> bool:
+    folded = _fold(text)
+    if _has_pieces_in_order(pieces, folded):
+        return True
+    compact = WHITESPACE_RE.sub("", folded)
+    return _has_pieces_in_order(
+        [WHITESPACE_RE.sub("", piece) for piece in pieces], compact
+    )
+
+
 def _is_verified(evidence: Evidence, sources: GroundingSources) -> bool:
-    quote = _fold(evidence.quote)
-    if not quote:
+    pieces = _quote_pieces(evidence.quote)
+    if not pieces:
         return False
     texts = sources.texts_by_doc.get(normalize_doc_id(evidence.doc_id), ())
-    return any(quote in _fold(text) for text in texts)
+    return any(_is_quote_in_text(pieces, text) for text in texts)
 
 
 def _amount_key(text: str) -> str | None:
@@ -95,7 +130,12 @@ def _is_grounded(item: str, haystacks: list[str]) -> bool:
     item_keys = {
         key for key in (normalize_date(trimmed), _amount_key(trimmed)) if key
     }
-    return any(item_keys & _scan_keys(haystack) for haystack in haystacks)
+    haystack_keys = [_scan_keys(haystack) for haystack in haystacks]
+    if any(item_keys & keys for keys in haystack_keys):
+        return True
+    embedded_keys = _scan_keys(folded)
+    known_keys = set().union(*haystack_keys)
+    return bool(embedded_keys) and embedded_keys <= known_keys
 
 
 def _answer_items(draft: DraftAnswer) -> list[str]:

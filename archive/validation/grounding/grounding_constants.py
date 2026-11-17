@@ -33,6 +33,10 @@ PUNCTUATION_FOLD = str.maketrans(
     }
 )
 WHITESPACE_RE = re.compile(r"\s+")
+# Marks where a quote elides text: "...", the ellipsis character, "[...]".
+ELLIPSIS_RE = re.compile(r"\[\s*(?:\.{3}|…)\s*\]|\.{3,}|…")
+# Quote pieces shorter than this are ignored beside a longer piece.
+MIN_QUOTE_PIECE_LENGTH = 8
 
 ISSUE_QUOTE_UNVERIFIED = (
     "quote for {doc_id} not found in its retrieved text: {quote!r}"
