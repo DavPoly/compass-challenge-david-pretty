@@ -111,6 +111,15 @@ def _should_follow_up(
     return drafts_made < policy.max_drafts and elapsed_s < policy.time_budget_s
 
 
+def _draft_next(
+    question: Question, state: _LoopState, llm: LlmGateway
+) -> DraftAnswer:
+    """Draft from the current prompt hits and record them as used."""
+    prompt_hits = state.prompt_hits()
+    state.mark_used(prompt_hits)
+    return draft(question, prompt_hits, llm)
+
+
 def _log_draft(
     question: Question, draft_number: int, current: DraftAnswer
 ) -> None:
@@ -153,11 +162,10 @@ def run_hops(  # noqa: PLR0913 - frozen signature
             is not repeated.
 
     Returns:
-        A result whose hits are every hit that reached a prompt and
-        whose draft is the last draft. Prompt hits are the targeted
-        ones (expansion and follow-up, newest first), then original
-        hits sharing an identifier with a targeted one, then the
-        other original hits, capped at `MAX_PROMPT_CHUNKS`.
+        A result with every hit that reached a prompt and the last
+        draft. Prompt hits: targeted ones (newest first), originals
+        sharing an identifier with them, then the other originals,
+        capped at `MAX_PROMPT_CHUNKS`.
 
     Raises:
         LlmUnavailableError: the LLM could not give a valid draft.
@@ -171,9 +179,7 @@ def run_hops(  # noqa: PLR0913 - frozen signature
         if policy.expand_upfront:
             state.expanded = True
             state.targeted = expand_by_identifiers(question, hits, search)
-        prompt_hits = state.prompt_hits()
-        state.mark_used(prompt_hits)
-        current = draft(question, prompt_hits, llm)
+        current = _draft_next(question, state, llm)
     drafts_made = 1
     _log_draft(question, drafts_made, current)
     while _should_follow_up(
@@ -187,9 +193,7 @@ def run_hops(  # noqa: PLR0913 - frozen signature
             break
         logger.info(LOG_FOLLOW_UP, question.id, drafts_made, len(new_hits))
         state.targeted = new_hits + state.targeted
-        prompt_hits = state.prompt_hits()
-        state.mark_used(prompt_hits)
-        current = draft(question, prompt_hits, llm)
+        current = _draft_next(question, state, llm)
         drafts_made += 1
         _log_draft(question, drafts_made, current)
     return RecipeResult(hits=list(state.used.values()), draft=current)
