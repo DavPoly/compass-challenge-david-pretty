@@ -168,6 +168,14 @@ button:disabled { cursor: default; }
 .answer-big { margin-top: 4px; font-size: 30px; line-height: 1.15; overflow-wrap: anywhere; }
 .answer-big.none { color: var(--text2); font-size: 34px; }
 .answer-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.timeline { margin-top: 16px; padding: 14px 20px; border-radius: var(--radius-md); background: var(--muted); }
+.timeline summary { display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; color: var(--text2); font-size: 14px; }
+.timeline summary::-webkit-details-marker { display: none; }
+.timeline summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; border-radius: 8px; }
+.timeline .chevron { transform: rotate(90deg); transition: transform 0.15s; }
+.timeline[open] .chevron { transform: rotate(-90deg); }
+.timeline .steps { margin-top: 12px; }
+.timeline-total { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--divider); text-align: right; font-family: var(--mono); font-size: 13px; color: var(--text2); }
 .notices { display: grid; gap: 10px; margin-top: 16px; }
 .notice {
   display: flex; gap: 12px; padding: 16px; border-radius: var(--radius-md);
