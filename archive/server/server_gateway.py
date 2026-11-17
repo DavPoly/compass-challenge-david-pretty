@@ -325,8 +325,8 @@ class _Handler(BaseHTTPRequestHandler):
             logger.exception(LOG_ASK_FAILED)
             stream.send(EVENT_ERROR, ErrorPayload(message=MSG_UNEXPECTED))
             return
-        _run_hook(self.context.on_result)
         stream.send(EVENT_RESULT, ResultPayload(question=view))
+        _run_hook(self.context.on_result)
 
     def _send_file(self, path: Path | None) -> None:
         if path is None or not path.is_file():

@@ -24,6 +24,7 @@ BUSY_ERROR = (
 )
 WAIT_S = 5
 PNG_BYTES = b"\x89PNG"
+RESULT_EVENT_LINE = b"event: result\n"
 HTTP_LINE_END = "\r\n"
 
 
@@ -85,6 +86,7 @@ class Running:
         self.port = port
         self.ask = ask
         self.rebuilds = 0
+        self.hook: Callable[[], None] = lambda: None
 
     def request(
         self,
@@ -127,6 +129,7 @@ def running(tmp_path: Path) -> Iterator[Running]:
 
     def on_result() -> None:
         state.rebuilds += 1
+        state.hook()
 
     server = create_server(0, ServerContext(ask, out_dir, on_result))
     state.port = server.server_address[1]
@@ -435,6 +438,50 @@ def test_stalled_body_is_dropped_after_the_timeout(
     status, _, _ = running.request("GET", "/api/health")
     assert reply == b""
     assert status == 200
+
+
+def test_result_event_is_sent_before_the_hook_runs(
+    running: Running,
+) -> None:
+    result_received = threading.Event()
+    hook_saw_result: list[bool] = []
+
+    def hook() -> None:
+        hook_saw_result.append(result_received.wait(timeout=WAIT_S))
+
+    running.hook = hook
+    conn = http.client.HTTPConnection(
+        "127.0.0.1", running.port, timeout=WAIT_S
+    )
+    conn.request(
+        "POST",
+        "/api/ask",
+        json.dumps({"question": "Q"}),
+        {"Content-Type": "application/json"},
+    )
+    response = conn.getresponse()
+    while response.readline() != RESULT_EVENT_LINE:
+        pass
+    result_received.set()
+    response.read()
+    conn.close()
+
+    assert hook_saw_result == [True]
+
+
+def test_failing_hook_is_only_logged(
+    running: Running, caplog: pytest.LogCaptureFixture
+) -> None:
+    def hook() -> None:
+        raise RuntimeError("rebuild broke")
+
+    running.hook = hook
+
+    status, _, body = running.post({"question": "Q"})
+
+    assert status == 200
+    assert parse_events(body)[-1][0] == "result"
+    assert "result hook failed" in caplog.text
 
 
 def test_second_server_on_a_taken_port_fails(running: Running) -> None:
