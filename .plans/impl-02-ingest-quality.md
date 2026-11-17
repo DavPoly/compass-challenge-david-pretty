@@ -307,3 +307,7 @@ mypy --strict green, scored 33.30/45 (baseline 26.60). Nothing pushed;
 (and push on explicit approval), then step 03 (dense + rerank) or
 step 04 (router/recipes). Remaining misses target 04/05: s01
 superseded-by-date, s20 aggregation, s05/s08/s15 multi_hop second hop.
+- 2026-11-16 (final, on `main` @ b298d6b after the merge and the index
+  rebuild): score.py --details 33.30/45, same 11/16 exact answers and
+  the same 5 not_found misses; citations 3.53/5; no-op startup sync
+  1.6 s.
