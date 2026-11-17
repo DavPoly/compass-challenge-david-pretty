@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import threading
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 import pytest
@@ -266,3 +266,124 @@ def test_sample_code_questions_hit_gold_doc_in_top_8() -> None:
         for question, gold_docs in cases:
             hits = committed.hybrid_search(question, None, TOP_K)
             assert gold_docs & set(doc_ids(hits)), question
+
+
+DENSE_DIM = 3
+DENSE_QUERY = [1.0, 0.0, 0.0]
+RERANK_TOP_K = 2
+TEXTS = {"a": "facture alpha", "b": "facture beta", "c": "facture gamma"}
+DENSE_VECTORS = [DENSE_QUERY, [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+RERANK_SCORES = {TEXTS["a"]: 1.0, TEXTS["b"]: 2.0, TEXTS["c"]: 3.0}
+
+
+class FakeEmbedder:
+    dim = DENSE_DIM
+
+    def __init__(self, fails: bool = False) -> None:
+        self.fails = fails
+        self.query_calls = 0
+
+    def embed_passages(self, texts: Sequence[str]) -> list[list[float]]:
+        return [DENSE_QUERY for _ in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        self.query_calls += 1
+        if self.fails:
+            raise RuntimeError("embedder down")
+        return DENSE_QUERY
+
+
+class FakeReranker:
+    """Scores gamma above beta above alpha."""
+
+    def __init__(self, fails: bool = False) -> None:
+        self.fails = fails
+
+    def score(self, query: str, texts: Sequence[str]) -> list[float]:
+        if self.fails:
+            raise RuntimeError("reranker down")
+        return [RERANK_SCORES[text] for text in texts]
+
+
+def build_service(
+    tmp_path: Path,
+    embedder: FakeEmbedder | None,
+    reranker: FakeReranker | None = None,
+    with_dense: bool = True,
+) -> SearchService:
+    gateway = QdrantGateway.open(tmp_path)
+    gateway.ensure_collection(DENSE_DIM if with_dense else None)
+    chunks = [
+        make_chunk("a", ["F-2021-1393"], "invoice", None),
+        make_chunk("b", [], "invoice", None),
+        make_chunk("c", [], "invoice", None),
+    ]
+    for chunk in chunks:
+        chunk.text = TEXTS[chunk.doc_id]
+    gateway.upsert(chunks, DENSE_VECTORS if with_dense else None)
+    manifest = {chunk.doc_id: {"size": 1, "sha1": "x"} for chunk in chunks}
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    return SearchService(gateway, tmp_path, embedder, reranker)
+
+
+def test_no_embedder_uses_sparse_path(tmp_path: Path) -> None:
+    with build_service(tmp_path, None) as service:
+        hits = service.hybrid_search("facture alpha", None, TOP_K)
+    assert doc_ids(hits)[0] == "a"
+
+
+def test_index_without_dense_never_embeds(tmp_path: Path) -> None:
+    embedder = FakeEmbedder()
+    with build_service(tmp_path, embedder, with_dense=False) as service:
+        hits = service.hybrid_search("facture alpha", None, TOP_K)
+    assert embedder.query_calls == 0
+    assert doc_ids(hits)[0] == "a"
+
+
+def test_identifier_retry_embeds_once_with_dense(tmp_path: Path) -> None:
+    embedder = FakeEmbedder()
+    with build_service(tmp_path, embedder) as service:
+        hits = service.hybrid_search("facture F-2099-0001", None, TOP_K)
+    assert set(doc_ids(hits)) == {"a", "b", "c"}
+    assert embedder.query_calls == 1
+
+
+def test_identifier_filter_still_restricts_with_dense(
+    tmp_path: Path,
+) -> None:
+    with build_service(tmp_path, FakeEmbedder()) as service:
+        hits = service.hybrid_search("facture F-2021-1393", None, TOP_K)
+    assert doc_ids(hits) == ["a"]
+
+
+def test_reranker_reorders_and_truncates_to_k(tmp_path: Path) -> None:
+    with build_service(tmp_path, FakeEmbedder(), FakeReranker()) as service:
+        hits = service.hybrid_search("facture", None, RERANK_TOP_K)
+    assert doc_ids(hits) == ["c", "b"]
+    assert hits[0].score == RERANK_SCORES[TEXTS["c"]]
+
+
+def test_embedder_failure_falls_back_to_sparse_with_warning(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    with (
+        build_service(tmp_path, FakeEmbedder(fails=True)) as service,
+        caplog.at_level(logging.WARNING),
+    ):
+        hits = service.hybrid_search("facture alpha", None, TOP_K)
+    assert doc_ids(hits)[0] == "a"
+    assert caplog.text.count("query embedding failed") == 1
+
+
+def test_reranker_failure_keeps_fused_order_with_warning(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    with (
+        build_service(
+            tmp_path, FakeEmbedder(), FakeReranker(fails=True)
+        ) as service,
+        caplog.at_level(logging.WARNING),
+    ):
+        hits = service.hybrid_search("facture alpha", None, TOP_K)
+    assert doc_ids(hits)[0] == "a"
+    assert caplog.text.count("reranking failed") == 1
