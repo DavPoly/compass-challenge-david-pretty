@@ -124,9 +124,10 @@ pytest -q
 
 ## Architecture choisie en 3 lignes
 
-1. **Ingestion** (`archive/ingest`) : pdfplumber, tableaux découpés en chunks
-   à part, métadonnées (type de document, dates, versions, identifiants) ;
-   index committé et synchronisé de façon incrémentale.
+1. **Ingestion** (`archive/ingest`) : pdfplumber, tableaux rendus en lignes
+   `cellule | cellule` dans le texte, métadonnées (type de document, dates,
+   versions, identifiants) ; index committé et synchronisé de façon
+   incrémentale.
 2. **Agent** (`archive/agent`, `archive/retrieval`, `archive/llm`) : routeur
    regex + un appel LLM de planification ; recettes (direct, agrégation avec
    sommes décimales exactes, versions remplacées) ; multi-sauts par expansion
@@ -135,14 +136,29 @@ pytest -q
 3. **Validation** (`archive/validation`) : schémas pydantic, nouvelle demande
    de réparation au modèle si la sortie est invalide, citations limitées aux
    documents récupérés, règles de statut (`answered` / `not_found` /
-   `conflict`).
+   `conflict`) ; ancrage : chaque citation vérifiée mot pour mot dans le
+   document, chaque valeur de la réponse retrouvée dans une citation ou un
+   calcul, niveau de confiance par règles. Une trace JSON par question
+   (`traces/`) alimente l'application web (`archive/server`,
+   `archive/viewer`).
 
 ## Angle libre
 
-À compléter après l'étape 07 : traces et visualiseur.
+**Vérifier en un clic.** Une application locale (`python scripts/serve.py`,
+voir « Mode interactif ») permet de poser une question et de voir :
+
+- les étapes du pipeline en direct, puis leur durée sous la réponse ;
+- chaque citation encadrée sur l'image de la page PDF (verte si vérifiée,
+  rouge si absente du document) ;
+- « Pourquoi cette confiance ? » et les valeurs non retrouvées dans les
+  sources, nommées une à une ;
+- les conflits côte à côte et les documents consultés pour un
+  `not_found`.
+
+La vérification est faite en Python, sans appel LLM supplémentaire.
 
 ## Démo (lien)
 
-À compléter après l'étape 07 : traces et visualiseur.
+[LIEN DÉMO] — vidéo de 2 minutes de l'application.
 
 Les détails (choix, mesures, limites) sont dans `REPORT.pdf`.

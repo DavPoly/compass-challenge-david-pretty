@@ -7,6 +7,7 @@ from pathlib import Path
 
 from archive.common.constants import (
     API_KEY_MASK,
+    CACHE_DIR_NAME,
     CORPUS_DIR_NAME,
     ENV_LLM_API_KEY,
     ENV_LLM_BASE_URL,
@@ -14,7 +15,7 @@ from archive.common.constants import (
     INDEX_DIR_NAME,
     REPO_ROOT,
     TRACES_DIR_NAME,
-    VIEWER_DIR_NAME,
+    WEBAPP_DIR_NAME,
 )
 
 REQUIRED_ENV_VARS = (ENV_LLM_BASE_URL, ENV_LLM_API_KEY, ENV_LLM_MODEL)
@@ -36,8 +37,8 @@ class AppConfig:
     traces_dir: Path = field(
         default_factory=lambda: REPO_ROOT / TRACES_DIR_NAME
     )
-    viewer_dir: Path = field(
-        default_factory=lambda: REPO_ROOT / VIEWER_DIR_NAME
+    webapp_dir: Path = field(
+        default_factory=lambda: REPO_ROOT / CACHE_DIR_NAME / WEBAPP_DIR_NAME
     )
 
     def __repr__(self) -> str:
@@ -48,7 +49,7 @@ class AppConfig:
             f"corpus_dir={self.corpus_dir!r}, "
             f"index_dir={self.index_dir!r}, "
             f"traces_dir={self.traces_dir!r}, "
-            f"viewer_dir={self.viewer_dir!r})"
+            f"webapp_dir={self.webapp_dir!r})"
         )
 
     @classmethod
@@ -73,5 +74,5 @@ class AppConfig:
             corpus_dir=REPO_ROOT / CORPUS_DIR_NAME,
             index_dir=REPO_ROOT / INDEX_DIR_NAME,
             traces_dir=REPO_ROOT / TRACES_DIR_NAME,
-            viewer_dir=REPO_ROOT / VIEWER_DIR_NAME,
+            webapp_dir=REPO_ROOT / CACHE_DIR_NAME / WEBAPP_DIR_NAME,
         )
