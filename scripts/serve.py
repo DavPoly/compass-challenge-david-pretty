@@ -62,7 +62,6 @@ from scripts.serve_constants import (  # noqa: E402
     MSG_READY,
     MSG_STOPPED,
     SCRIPT_DESCRIPTION,
-    SERVER_DIRNAME,
 )
 
 logger = logging.getLogger("serve")
@@ -93,7 +92,7 @@ def _viewer_request(
     return ViewerRequest(
         trace_dir=run_dir or config.traces_dir / EMPTY_RUN_DIRNAME,
         corpus_dir=config.corpus_dir,
-        out_dir=config.viewer_dir / SERVER_DIRNAME,
+        out_dir=config.webapp_dir,
         budget=ViewerBudget(None, time.monotonic),
         render=render_evidence,
         extra_trace_dirs=(live_dir,),

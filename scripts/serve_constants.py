@@ -1,7 +1,6 @@
 """Constants of the live server script."""
 
 LIVE_DIRNAME = "live"
-SERVER_DIRNAME = "server"
 EMPTY_RUN_DIRNAME = "no-run"
 
 SCRIPT_DESCRIPTION = (
