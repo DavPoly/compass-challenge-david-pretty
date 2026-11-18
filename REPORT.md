@@ -58,24 +58,6 @@ dense indisponible : repli BM25 seul.
 | Dense MiniLM, sur les 128 premiers tokens | e5-large (2,2 Go) ; fenêtre plus longue | MiniLM est le plus petit modèle à 0,02 du meilleur rappel (rappel@16 : 0,79 → 0,82, +0,07 sur des paraphrases). Seul le début de chaque document est vectorisé ; le document entier aurait été préférable, mais l'indexation et les requêtes sur CPU local dépassaient le budget. BM25 couvre le texte complet |
 | Top-k 16 après fusion RRF, sans reranker | Reranker (jina, bge) sur les 30 meilleurs candidats | BM25 et dense renvoient chacun 50 candidats, fusionnés par RRF ; les 16 premiers documents vont au prompt. Avec 8, les agrégations perdaient des factures ; 16 garde le prompt court. Un reranker aurait aidé ici (paraphrases, questions FR sur documents EN, ordre des versions), mais il coûtait 20 à 35 s par question (jina, 11,8 Go de RAM) et 105 à 140 s (bge) sur CPU, hors du budget de 20 min |
 
-**Progression du score et analyse des erreurs (20 exemples).**
-D'abord un squelette complet et naïf (recherche BM25, un appel
-LLM, validation du format), pour obtenir un score de référence. Ensuite, à
-chaque étape : lancer les 20 exemples, lire `score.py --details` par famille
-de questions (direct, multi-sauts, agrégation, versions, conflit, sans
-réponse), classer chaque échec selon sa cause (document non trouvé, logique
-absente, sortie du modèle), puis corriger la cause qui coûte le plus de
-points. Une étape n'est gardée que si le score ne baisse pas.
-
-| Étape | Score | Erreurs observées sur les 20 questions | Ce qui a motivé l'étape suivante |
-|---|---|---|---|
-| 01 Squelette : BM25, top-8, 1 appel | 26,60 | 10 `not_found`, dont 7 injustifiés. Versions 1/3 : rien n'indique quelle version est en vigueur. Multi-sauts 0/4 | La cause principale est la recherche, pas la rédaction |
-| 02 Ingestion : tableaux, type de document, dates d'effet, top-16 | 33,30 | Versions 2/3, agrégation 2/3 (s20 : 17 factures, somme toujours partielle), multi-sauts 1/4 (le 2e maillon n'est jamais récupéré). 5 `not_found` injustifiés | Rappel BM25@16 de 0,79, faible sur les paraphrases et les questions FR sur documents EN |
-| 03 Dense MiniLM + fusion RRF | 33,30 | Rappel 0,79 → 0,82 (paraphrases 0,80 → 0,87), versions 3/3. Les 5 échecs restants (s20, s04, s05, s08, s15) ne viennent plus de la recherche : il manque de la logique | Traiter chaque famille par un pipeline dédié |
-| 04 Routeur + pipelines | 33,14 → 35,64 | Régression : s11 (« heures facturées ») routée en agrégation, le pipeline sommait des montants ; corrigé en réservant l'agrégation aux montants. Multi-sauts 0/4 : une passe ne voit que le premier maillon (facture → projet → répertoire) | Suivre les maillons |
-| 05 Multi-sauts + filet de sécurité | 37,98 → 42,51 → 45,00 | Expansion des codes : 1/4, la boucle ne se relançait pas car le brouillon se disait complet en répondant `not_found`. Prompt « chaîne partielle » : 3/4 (s04 citations incomplètes, s08 `not_found`). Citation de toute la chaîne : 4/4 | Plus d'erreur ; rendre chaque réponse vérifiable |
-| 06–07 Ancrage, application web | 45,00 | Aucune ; l'ancrage signale sans jamais abstenir, donc pas de régression | — |
-
 Temps : 5,2 s par question en moyenne (max 13,8 s, 8 en parallèle) ;
 démarrage à froid 20 s, téléchargement du modèle dense compris.
 
