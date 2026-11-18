@@ -72,7 +72,7 @@ stockage Qdrant local est lié aux versions épinglées.
 réponse. En usage réel, il n'y a pas de
 corrigé : il faut pouvoir juger une réponse seule.
 
-**Limites du RAG, et ce que l'application montre pour chacune.**
+**Limites du RAG, et ce que l'application montre pour chacune.** [\[LIEN DÉMO\]](https://youtu.be/lkWiLNiX0Ww)
 
 | Limite | Conséquence | Dans l'application |
 |---|---|---|
@@ -82,12 +82,3 @@ corrigé : il faut pouvoir juger une réponse seule.
 | La recherche peut manquer le bon document | Un `not_found` ne dit pas si le document existe | Les documents consultés sont listés avec leur score |
 | Versions et sources contradictoires | Le relecteur ne voit qu'une valeur | Les sources en conflit sont affichées côte à côte |
 | Le pipeline est une boîte noire | Impossible de savoir quelle étape a échoué | Les étapes s'affichent en direct (routage, recherche, rédaction, saut, validation, vérification), puis restent sous la réponse avec leur durée |
-
-**Limites de l'angle libre.** La vérification est lexicale : un extrait
-vérifié prouve que la phrase existe dans le document, pas qu'elle répond à
-la question. Elle est faite en Python, sans appel LLM supplémentaire.
-L'application (`python scripts/serve.py`, sans dépendance ajoutée) traite une
-question à la fois, n'écoute que `127.0.0.1` et refuse les requêtes venant
-d'un autre site.
-
-**Démo (2 min) :** [\[DÉMO\]](https://youtu.be/lkWiLNiX0Ww)
