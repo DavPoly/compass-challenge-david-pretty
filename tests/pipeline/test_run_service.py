@@ -1038,7 +1038,7 @@ def test_run_writes_traces_but_no_viewer(
     tmp_path: Path,
 ) -> None:
     config, query = indexed
-    config = replace(config, viewer_dir=tmp_path / "viewer")
+    config = replace(config, webapp_dir=tmp_path / "webapp")
     questions = write_questions(
         tmp_path / "q.jsonl", [{"id": "q1", "question": query}]
     )
@@ -1049,4 +1049,4 @@ def test_run_writes_traces_but_no_viewer(
 
     assert code == EXIT_OK
     assert read_traces(run_dir)
-    assert not (tmp_path / "viewer").exists()
+    assert not (tmp_path / "webapp").exists()
